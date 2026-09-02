@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image I/O &amp; CLI — Learning Hub</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1e2230; --text:#e6e8ef; --muted:#9aa2b1;
+    --accent:#6ea8fe; --accent2:#7ee0b8; --border:#2a2f3d; --code:#11141c; --warn:#f7b955;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Roboto,Arial,sans-serif;line-height:1.6;}
+  .topbar{position:sticky;top:0;background:rgba(15,17,23,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;z-index:10;}
+  .topbar a.back{color:var(--muted);text-decoration:none;font-size:.9rem;}
+  .topbar a.back:hover{color:var(--accent);}
+  .topbar h1{font-size:1.05rem;margin:0;flex:1;}
+  .topbar input{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;width:220px;font-size:.9rem;}
+  main{max-width:900px;margin:0 auto;padding:24px;}
+  .file-tag{color:var(--accent2);font-family:Consolas,Menlo,monospace;font-size:.85rem;}
+  details.fn{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;}
+  details.fn[open]{border-color:var(--accent);}
+  summary{cursor:pointer;padding:16px 20px;font-weight:600;list-style:none;display:flex;align-items:center;gap:10px;}
+  summary::-webkit-details-marker{display:none;}
+  summary .arrow{transition:transform .15s;color:var(--muted);}
+  details[open] summary .arrow{transform:rotate(90deg);}
+  summary code{background:var(--code);color:#ffcb8b;padding:3px 8px;border-radius:6px;font-family:Consolas,Menlo,monospace;font-size:.95rem;}
+  .body{padding:0 20px 20px;color:var(--text);}
+  .section-label{color:var(--accent);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;font-weight:700;}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:.85rem;color:#dfe3ee;}
+  ul{margin:6px 0;padding-left:20px;}
+  .muted{color:var(--muted);}
+  .tip{background:#182a1f;border:1px solid #244a34;color:#a9e8c6;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .warn{background:#2b2312;border:1px solid #5a4720;color:var(--warn);padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .hidden{display:none !important;}
+  footer{text-align:center;color:var(--muted);padding:30px;font-size:.85rem;}
+  footer a{color:#6ea8fe;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="back" href="index.html">&larr; Hub</a>
+  <h1>Image I/O &amp; CLI <span class="file-tag">main.py</span></h1>
+  <input id="search" type="text" placeholder="Filter functions…">
+</div>
+
+<main id="list">
+
+<details class="fn" open>
+  <summary><span class="arrow">▶</span><code>cv2.imread(path)</code></summary>
+  <div class="body">
+    <p>Loads an image file from disk into a NumPy array (height × width × 3, BGR order, <code>uint8</code>).</p>
+    <div class="section-label">Used in this project</div>
+    <pre>person_bgr = cv2.imread(str(person_path))
+if person_bgr is None:
+    # file existed but wasn't a readable image (bad format/corrupt)
+    ...</pre>
+    <div class="section-label">Gotchas</div>
+    <ul>
+      <li>Returns <code>None</code> on failure instead of raising an exception — always check for <code>None</code>, don't assume a successful read.</li>
+      <li>Takes a plain string path — on Windows, wrap <code>pathlib.Path</code> objects in <code>str(...)</code> first.</li>
+      <li>Ignores alpha by default; pass <code>cv2.IMREAD_UNCHANGED</code> to keep a 4th (alpha) channel if the source file has one.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>cv2.imwrite(path, img)</code></summary>
+  <div class="body">
+    <p>Saves a NumPy image array to disk. The output format (JPEG, PNG, …) is inferred entirely from the file extension in <code>path</code>.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>cv2.imwrite(str(output_path), result)</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Any time a processed image needs to be persisted rather than just displayed.</li>
+    </ul>
+    <div class="tip">Use <code>.png</code> for anything with transparency or that must stay lossless (masks, intermediate debug images); <code>.jpg</code> is fine for the final photo-style result and is much smaller.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>argparse.ArgumentParser</code></summary>
+  <div class="body">
+    <p>Standard-library tool for turning command-line arguments (<code>--person photo.jpg --output out.jpg</code>) into a Python object with named attributes, plus free <code>--help</code> text and error messages for missing/invalid args.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>parser = argparse.ArgumentParser(description="Try clothes on a person photo before buying.")
+parser.add_argument("--person", required=True, help="Path to the photo of the person.")
+parser.add_argument("--backend", choices=["classic", "diffusion"], default="classic")
+args = parser.parse_args()
+# args.person, args.cloth, args.output, args.backend</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Any script meant to be run from a terminal with configurable inputs, rather than hard-coded file paths.</li>
+      <li><code>choices=[...]</code> gives you free validation — an invalid <code>--backend</code> value fails immediately with a clear error, no manual <code>if</code> checks needed.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>pathlib.Path</code></summary>
+  <div class="body">
+    <p>Object-oriented file path handling — cross-platform (handles <code>/</code> vs <code>\</code> automatically), with methods instead of stringly-typed <code>os.path</code> calls.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>person_path = Path(args.person)
+if not person_path.exists():
+    ...
+output_path = Path(args.output)
+output_path.parent.mkdir(parents=True, exist_ok=True)   # create output/ if missing
+print(output_path.resolve())                             # full absolute path, for a clean confirmation message</pre>
+    <div class="section-label">Handy methods used here</div>
+    <ul>
+      <li><code>.exists()</code> — check a file/folder is actually there before trying to use it.</li>
+      <li><code>.parent</code> — the containing directory, so you can ensure it exists before writing into it.</li>
+      <li><code>.mkdir(parents=True, exist_ok=True)</code> — create nested directories, and don't error if they already exist.</li>
+      <li><code>.resolve()</code> — turn a relative path into an absolute one, useful for user-facing "saved to ..." messages.</li>
+    </ul>
+  </div>
+</details>
+
+</main>
+<footer><a href="classic_backend.html">← Warp &amp; Blend Engine</a> &nbsp;·&nbsp; <a href="index.html">Back to Hub</a></footer>
+
+<script>
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#list > details').forEach(d => {
+    const text = d.textContent.toLowerCase();
+    d.classList.toggle('hidden', q && !text.includes(q));
+    if (q && text.includes(q)) d.open = true;
+  });
+});
+</script>
+</body>
+</html>

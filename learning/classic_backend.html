@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warp &amp; Blend Engine — Learning Hub</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1e2230; --text:#e6e8ef; --muted:#9aa2b1;
+    --accent:#6ea8fe; --accent2:#7ee0b8; --border:#2a2f3d; --code:#11141c; --warn:#f7b955;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Roboto,Arial,sans-serif;line-height:1.6;}
+  .topbar{position:sticky;top:0;background:rgba(15,17,23,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;z-index:10;}
+  .topbar a.back{color:var(--muted);text-decoration:none;font-size:.9rem;}
+  .topbar a.back:hover{color:var(--accent);}
+  .topbar h1{font-size:1.05rem;margin:0;flex:1;}
+  .topbar input{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;width:220px;font-size:.9rem;}
+  main{max-width:900px;margin:0 auto;padding:24px;}
+  .file-tag{color:var(--accent2);font-family:Consolas,Menlo,monospace;font-size:.85rem;}
+  details.fn{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;}
+  details.fn[open]{border-color:var(--accent);}
+  summary{cursor:pointer;padding:16px 20px;font-weight:600;list-style:none;display:flex;align-items:center;gap:10px;}
+  summary::-webkit-details-marker{display:none;}
+  summary .arrow{transition:transform .15s;color:var(--muted);}
+  details[open] summary .arrow{transform:rotate(90deg);}
+  summary code{background:var(--code);color:#ffcb8b;padding:3px 8px;border-radius:6px;font-family:Consolas,Menlo,monospace;font-size:.95rem;}
+  .body{padding:0 20px 20px;color:var(--text);}
+  .section-label{color:var(--accent);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;font-weight:700;}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:.85rem;color:#dfe3ee;}
+  ul{margin:6px 0;padding-left:20px;}
+  .muted{color:var(--muted);}
+  .tip{background:#182a1f;border:1px solid #244a34;color:#a9e8c6;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .warn{background:#2b2312;border:1px solid #5a4720;color:var(--warn);padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .hidden{display:none !important;}
+  footer{text-align:center;color:var(--muted);padding:30px;font-size:.85rem;}
+  footer a{color:#6ea8fe;text-decoration:none;}
+  .diagram{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:16px;margin:10px 0;font-family:Consolas,Menlo,monospace;font-size:.82rem;color:var(--muted);white-space:pre;overflow-x:auto;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="back" href="index.html">&larr; Hub</a>
+  <h1>Warp &amp; Blend Engine <span class="file-tag">tryon/classic_backend.py</span></h1>
+  <input id="search" type="text" placeholder="Filter functions…">
+</div>
+
+<main id="list">
+
+<details class="fn" open>
+  <summary><span class="arrow">▶</span><code>cv2.findHomography(srcPoints, dstPoints)</code></summary>
+  <div class="body">
+    <p>Given two sets of 4+ matching points, computes the 3×3 <strong>homography matrix</strong> — the perspective transform that maps one flat plane onto another (handles rotation, scale, skew, and perspective foreshortening, not just simple resizing).</p>
+    <div class="section-label">Used in this project</div>
+    <pre>homography, _ = cv2.findHomography(src_quad, target_quad)
+# src_quad    = the garment's 4 corners (top-left/right, bottom-left/right)
+# target_quad = the corresponding 4 points on the person's torso</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Mapping a flat image onto another flat surface at an angle: document scanning ("de-skew this photo of a page"), placing a logo on a tilted surface, AR overlays, panorama stitching, and here — fitting a garment photo onto a torso.</li>
+    </ul>
+    <div class="tip">Needs at least 4 point correspondences (a quad → quad mapping). For a simpler case — e.g. just rotate/scale/translate, no perspective skew — <code>cv2.getAffineTransform</code> (3 points) is lighter-weight.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>cv2.warpPerspective(src, M, dsize)</code></summary>
+  <div class="body">
+    <p>Applies a homography matrix (from <code>findHomography</code>, or built manually) to actually resample an image — i.e. it draws the pixels of <code>src</code> onto the output canvas, distorted according to <code>M</code>.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>warped = cv2.warpPerspective(garment_bgra, homography, (w, h))
+# output canvas is the same size (w, h) as the person photo,
+# so the warped garment lands directly in the right place</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Always paired with <code>findHomography</code> (or a manually-built matrix) — one computes the transform, the other applies it to pixels.</li>
+    </ul>
+    <div class="warn">Because <code>garment_bgra</code> has an alpha channel, the warp also carries the transparency along for free — pixels outside the original garment silhouette warp to alpha 0.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>cv2.GaussianBlur(src, ksize, sigmaX)</code></summary>
+  <div class="body">
+    <p>Smooths an image (or in our case, a mask) by averaging each pixel with its neighbors, weighted by a bell-curve (Gaussian) falloff.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>combined_mask = cv2.GaussianBlur(combined_mask, (0, 0), sigmaX=self.feather_px / 3)</pre>
+    <div class="section-label">Why blur a mask?</div>
+    <p>A hard-edged mask (0s and 1s only) produces a visible, jagged cut-out line where the garment meets the photo. Blurring turns the mask edge into a soft gradient (0 → 1 over a few pixels), which — when used as a blend weight — produces a smooth, feathered transition instead of a sticker-cutout look.</p>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Noise reduction before edge detection, feathering compositing masks (as here), softening an image for a stylized/dreamy look.</li>
+      <li><code>ksize=(0,0)</code> tells OpenCV to auto-compute the kernel size from <code>sigmaX</code> — convenient when you only care about "how strong," not the exact kernel dimensions.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>np.clip(array, a_min, a_max)</code></summary>
+  <div class="body">
+    <p>Clamps every value in an array to a range — anything below <code>a_min</code> becomes <code>a_min</code>, anything above <code>a_max</code> becomes <code>a_max</code>.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>combined_mask = np.clip(combined_mask, 0.0, 1.0)</pre>
+    <div class="section-label">Why</div>
+    <p>Blurring can push mask values slightly outside the valid <code>0..1</code> range due to floating-point rounding at the edges; clipping guarantees the mask stays a valid blend weight before it's used in later math or converted to an 8-bit image.</p>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Any time you do math on pixel values (blurring, blending, brightness/contrast adjustments) and need to guarantee the result is still a valid image range before saving or converting dtype.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>cv2.seamlessClone(src, dst, mask, center, flags)</code></summary>
+  <div class="body">
+    <p>Poisson blending: instead of a plain alpha "cut and paste," it blends the <em>gradients</em> (rates of change) of the source region into the destination, so lighting/color continuity across the seam looks natural rather than pasted-on.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>result = cv2.seamlessClone(warped_rgb, person_bgr, mask_u8, center, cv2.NORMAL_CLONE)</pre>
+    <div class="section-label">Key arguments</div>
+    <ul>
+      <li><code>mask</code> — 8-bit single-channel, non-zero where the source should be pasted.</li>
+      <li><code>center</code> — pixel location <strong>in the destination image</strong> where the mask's center should land.</li>
+      <li><code>flags</code> — <code>cv2.NORMAL_CLONE</code> (preserve source texture) vs. <code>cv2.MIXED_CLONE</code> (blend using whichever of source/destination has stronger gradients — better when the pasted region has transparent/flat parts that should let the background's texture show through).</li>
+    </ul>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Compositing an object into a scene with different lighting — face swaps, object insertion, and here, blending a warped garment onto skin/background so the edges don't look like a sticker.</li>
+    </ul>
+    <div class="warn">It can throw <code>cv2.error</code> if the mask is empty/degenerate — that's why this project wraps it in <code>try/except</code> and falls back to plain alpha blending.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span>Manual alpha blending (fallback): <code>src*mask + dst*(1-mask)</code></summary>
+  <div class="body">
+    <p>Not a single OpenCV call — the classic "over" compositing formula, computed directly with NumPy array arithmetic when <code>seamlessClone</code> isn't usable.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>mask3 = combined_mask[:, :, None]   # add a channel dim so it broadcasts over B,G,R
+result = (warped_rgb.astype(np.float32) * mask3 +
+          person_bgr.astype(np.float32) * (1 - mask3)).astype(np.uint8)</pre>
+    <div class="diagram">for every pixel p:
+  result[p] = mask[p] * warped[p]  +  (1 - mask[p]) * original[p]
+              \_______________/       \____________________/
+              fully "warped" where     fully "original" where
+              mask == 1                mask == 0
+              (smooth mix in between, thanks to the Gaussian blur)</div>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Any straightforward compositing task where Poisson blending is overkill or unavailable — it's simpler and faster, at the cost of not correcting for lighting/color differences at the seam.</li>
+    </ul>
+    <div class="tip">Cast to <code>float32</code> before the multiply — multiplying <code>uint8</code> arrays directly wraps around (overflows) instead of clamping, corrupting the result.</div>
+  </div>
+</details>
+
+</main>
+<footer><a href="garment.html">← Garment Isolation</a> &nbsp;·&nbsp; <a href="io_cli.html">Image I/O &amp; CLI →</a></footer>
+
+<script>
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#list > details').forEach(d => {
+    const text = d.textContent.toLowerCase();
+    d.classList.toggle('hidden', q && !text.includes(q));
+    if (q && text.includes(q)) d.open = true;
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Garment Isolation — Learning Hub</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1e2230; --text:#e6e8ef; --muted:#9aa2b1;
+    --accent:#6ea8fe; --accent2:#7ee0b8; --border:#2a2f3d; --code:#11141c; --warn:#f7b955;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Roboto,Arial,sans-serif;line-height:1.6;}
+  .topbar{position:sticky;top:0;background:rgba(15,17,23,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;z-index:10;}
+  .topbar a.back{color:var(--muted);text-decoration:none;font-size:.9rem;}
+  .topbar a.back:hover{color:var(--accent);}
+  .topbar h1{font-size:1.05rem;margin:0;flex:1;}
+  .topbar input{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;width:220px;font-size:.9rem;}
+  main{max-width:900px;margin:0 auto;padding:24px;}
+  .file-tag{color:var(--accent2);font-family:Consolas,Menlo,monospace;font-size:.85rem;}
+  details.fn{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;}
+  details.fn[open]{border-color:var(--accent);}
+  summary{cursor:pointer;padding:16px 20px;font-weight:600;list-style:none;display:flex;align-items:center;gap:10px;}
+  summary::-webkit-details-marker{display:none;}
+  summary .arrow{transition:transform .15s;color:var(--muted);}
+  details[open] summary .arrow{transform:rotate(90deg);}
+  summary code{background:var(--code);color:#ffcb8b;padding:3px 8px;border-radius:6px;font-family:Consolas,Menlo,monospace;font-size:.95rem;}
+  .body{padding:0 20px 20px;color:var(--text);}
+  .section-label{color:var(--accent);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;font-weight:700;}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:.85rem;color:#dfe3ee;}
+  ul{margin:6px 0;padding-left:20px;}
+  .muted{color:var(--muted);}
+  .tip{background:#182a1f;border:1px solid #244a34;color:#a9e8c6;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .warn{background:#2b2312;border:1px solid #5a4720;color:var(--warn);padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .hidden{display:none !important;}
+  footer{text-align:center;color:var(--muted);padding:30px;font-size:.85rem;}
+  footer a{color:#6ea8fe;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="back" href="index.html">&larr; Hub</a>
+  <h1>Garment Isolation <span class="file-tag">tryon/garment.py</span></h1>
+  <input id="search" type="text" placeholder="Filter functions…">
+</div>
+
+<main id="list">
+
+<details class="fn" open>
+  <summary><span class="arrow">▶</span><code>rembg.remove(image)</code></summary>
+  <div class="body">
+    <p>Not OpenCV — a separate library that runs a pretrained neural network (a background-removal/segmentation model such as U2Net or BiRefNet) to strip the background from a photo, returning an RGBA image where the subject is opaque and everything else is transparent (alpha = 0).</p>
+    <div class="section-label">Why it's needed here</div>
+    <p>The garment photo usually comes with a plain-ish product-shot background (white wall, hanger, mannequin). Before we can warp just the <em>shirt</em> onto a person, we need to know which pixels are shirt vs. background — that's the alpha channel this function produces.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>from rembg import remove
+rgba = remove(cv2.cvtColor(garment_bgr, cv2.COLOR_BGR2RGBA))</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Product photo cleanup, cutting a subject out for compositing, removing backgrounds before feeding an image into another vision pipeline.</li>
+    </ul>
+    <div class="warn">It downloads a multi-MB/GB model file the first time it runs, and needs <code>onnxruntime</code> installed. That's why the code wraps it in a <code>try/except</code> and falls back to treating the whole image as opaque if it's unavailable.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>cv2.cvtColor(..., cv2.COLOR_BGR2RGBA / RGBA2BGRA)</code></summary>
+  <div class="body">
+    <p>Same function as in <a href="pose.html" style="color:#6ea8fe">pose.py</a>, but here it's also adding/reordering an <strong>alpha (transparency) channel</strong>, not just swapping red/blue.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>rgba = remove(cv2.cvtColor(garment_bgr, cv2.COLOR_BGR2RGBA))   # BGR -> RGBA for rembg
+return cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)                  # RGBA -> BGRA for OpenCV</pre>
+    <div class="section-label">Why both conversions</div>
+    <p><code>rembg</code>/PIL-style libraries expect <strong>RGBA</strong> channel order; OpenCV's convention is <strong>BGRA</strong>. We convert on the way in and on the way back out so the rest of our OpenCV code (which always assumes BGR(A)) doesn't get color-shifted images.</p>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>np.where(condition)</code></summary>
+  <div class="body">
+    <p>Given a boolean array, returns the <em>coordinates</em> (as separate arrays per axis) where the condition is <code>True</code>.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>ys, xs = np.where(alpha > 10)   # row/col indices of every "garment" pixel
+if len(xs) == 0:
+    raise RuntimeError("Garment image appears to be fully transparent/empty.")</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Finding the pixels that match a mask/threshold — bounding boxes, centroids, "is there anything here at all" checks.</li>
+      <li><code>np.where(cond, a, b)</code> (the 3-argument form) is a different, very common use: an elementwise "if/else" that picks from <code>a</code> or <code>b</code> per-pixel — useful for compositing without loops.</li>
+    </ul>
+    <div class="tip">Threshold at <code>&gt; 10</code> rather than <code>&gt; 0</code> to ignore near-invisible anti-aliased alpha noise around the true edge.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>mask_slice.max(axis=0)</code> — column-wise reduction</summary>
+  <div class="body">
+    <p>A NumPy array method, not OpenCV: collapses a 2D array down to 1D by taking the max down each column (<code>axis=0</code> = "collapse rows").</p>
+    <div class="section-label">Used in this project</div>
+    <pre>mask_slice = alpha[lo:hi + 1, :]              # a horizontal band near the top/bottom of the garment
+cols = np.where(mask_slice.max(axis=0) > 10)[0]  # which columns have ANY opaque pixel in that band
+top_left_x, top_right_x = cols.min(), cols.max()</pre>
+    <div class="section-label">Why</div>
+    <p>To approximate the garment's shoulder-width (top) and hem-width (bottom) without a full contour/pose model for the clothing itself — cheap and good enough for a roughly front-facing product photo.</p>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Any "does any pixel in this row/column satisfy X" question — collapsing a mask to find extents, projections, or histograms along one axis.</li>
+    </ul>
+  </div>
+</details>
+
+</main>
+<footer><a href="pose.html">← Pose &amp; Segmentation</a> &nbsp;·&nbsp; <a href="classic_backend.html">Warp &amp; Blend Engine →</a></footer>
+
+<script>
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#list > details').forEach(d => {
+    const text = d.textContent.toLowerCase();
+    d.classList.toggle('hidden', q && !text.includes(q));
+    if (q && text.includes(q)) d.open = true;
+  });
+});
+</script>
+</body>
+</html>

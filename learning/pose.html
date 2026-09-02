@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pose &amp; Body Segmentation — Learning Hub</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1e2230; --text:#e6e8ef; --muted:#9aa2b1;
+    --accent:#6ea8fe; --accent2:#7ee0b8; --border:#2a2f3d; --code:#11141c; --warn:#f7b955;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Roboto,Arial,sans-serif;line-height:1.6;}
+  .topbar{position:sticky;top:0;background:rgba(15,17,23,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;z-index:10;}
+  .topbar a.back{color:var(--muted);text-decoration:none;font-size:.9rem;}
+  .topbar a.back:hover{color:var(--accent);}
+  .topbar h1{font-size:1.05rem;margin:0;flex:1;}
+  .topbar input{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;width:220px;font-size:.9rem;}
+  main{max-width:900px;margin:0 auto;padding:24px;}
+  .file-tag{color:var(--accent2);font-family:Consolas,Menlo,monospace;font-size:.85rem;}
+  details.fn{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;}
+  details.fn[open]{border-color:var(--accent);}
+  summary{cursor:pointer;padding:16px 20px;font-weight:600;list-style:none;display:flex;align-items:center;gap:10px;}
+  summary::-webkit-details-marker{display:none;}
+  summary .arrow{transition:transform .15s;color:var(--muted);}
+  details[open] summary .arrow{transform:rotate(90deg);}
+  summary code{background:var(--code);color:#ffcb8b;padding:3px 8px;border-radius:6px;font-family:Consolas,Menlo,monospace;font-size:.95rem;}
+  .body{padding:0 20px 20px;color:var(--text);}
+  .section-label{color:var(--accent);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;font-weight:700;}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:.85rem;color:#dfe3ee;}
+  ul{margin:6px 0;padding-left:20px;}
+  .muted{color:var(--muted);}
+  .tip{background:#182a1f;border:1px solid #244a34;color:#a9e8c6;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .warn{background:#2b2312;border:1px solid #5a4720;color:var(--warn);padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .hidden{display:none !important;}
+  footer{text-align:center;color:var(--muted);padding:30px;font-size:.85rem;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="back" href="index.html">&larr; Hub</a>
+  <h1>Pose &amp; Body Segmentation <span class="file-tag">tryon/pose.py</span></h1>
+  <input id="search" type="text" placeholder="Filter functions…">
+</div>
+
+<main id="list">
+
+<details class="fn" open>
+  <summary><span class="arrow">▶</span><code>cv2.cvtColor(src, code)</code></summary>
+  <div class="body">
+    <p>Converts an image between color spaces (e.g. BGR ↔ RGB, BGR ↔ grayscale, BGR ↔ HSV).</p>
+    <div class="section-label">Why it's needed here</div>
+    <p>OpenCV always loads/stores images as <strong>BGR</strong> channel order, but mediapipe's models were trained expecting <strong>RGB</strong>. Skipping this swap doesn't crash anything — it just silently feeds the model color-swapped pixels, so skin tones and clothing colors come out wrong and detection gets noticeably less accurate.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>result = pose.process(cv2.cvtColor(person_bgr, cv2.COLOR_BGR2RGB))</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Any time you hand an OpenCV image to a library that expects RGB (mediapipe, PIL, most deep-learning models).</li>
+      <li><code>cv2.COLOR_BGR2GRAY</code> before edge detection / thresholding, since those usually work on single-channel images.</li>
+      <li><code>cv2.COLOR_BGR2HSV</code> when you want to filter by color/hue (HSV separates color from brightness, which BGR doesn't).</li>
+    </ul>
+    <div class="tip">Rule of thumb: OpenCV in, OpenCV out — convert only at the boundary where another library or a human viewer expects a different order.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>mp.solutions.pose.Pose(static_image_mode, model_complexity)</code></summary>
+  <div class="body">
+    <p>Constructs mediapipe's pose-landmark detector. It finds 33 body keypoints (nose, shoulders, elbows, wrists, hips, knees, ankles, etc.) in an image.</p>
+    <div class="section-label">Key parameters</div>
+    <ul>
+      <li><code>static_image_mode=True</code> — treat every call as an unrelated photo (no tracking between video frames). Slower but more accurate per single image; use <code>False</code> for video/webcam streams so it can track and interpolate between frames.</li>
+      <li><code>model_complexity</code> — <code>0</code> (fastest/least accurate) to <code>2</code> (slowest/most accurate). We use <code>2</code> since this runs once per photo, not in real time.</li>
+    </ul>
+    <div class="section-label">Used in this project</div>
+    <pre>with mp_pose.Pose(static_image_mode=True, model_complexity=2) as pose:
+    result = pose.process(rgb_image)</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Any task needing body position: fitness apps, gesture control, AR clothing/filters, sizing a garment to a torso (as we do here).</li>
+    </ul>
+    <div class="warn">It's used as a context manager (<code>with ... as pose:</code>) so the underlying native model resources are released automatically when the block exits.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>pose.process(image)</code></summary>
+  <div class="body">
+    <p>Runs the actual neural-network inference on one RGB image and returns a result object.</p>
+    <div class="section-label">What you get back</div>
+    <p><code>result.pose_landmarks.landmark</code> — a list of 33 landmarks, each with <code>.x</code>, <code>.y</code> (normalized 0–1, relative to image width/height), <code>.z</code> (relative depth) and <code>.visibility</code>. If no person is found, <code>result.pose_landmarks</code> is <code>None</code>.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>if not result.pose_landmarks:
+    raise RuntimeError("No person/pose detected in the person image.")
+lm = result.pose_landmarks.landmark</pre>
+    <div class="tip">Always check for <code>None</code> before indexing landmarks — a blurry photo, a cropped body, or a non-person image will return no landmarks.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>mp_pose.PoseLandmark</code> (landmark index → pixel coords)</summary>
+  <div class="body">
+    <p>An enum giving human-readable names (<code>LEFT_SHOULDER</code>, <code>RIGHT_HIP</code>, …) for the 33 landmark indices, instead of memorizing numbers.</p>
+    <div class="section-label">Normalized → pixel conversion</div>
+    <p>Landmarks come back as fractions of image size (0.0–1.0), so you must multiply by the image's actual width/height to get pixel coordinates.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>def pt(landmark):
+    p = lm[landmark]
+    return np.array([p.x * w, p.y * h])
+
+left_shoulder = pt(mp_pose.PoseLandmark.LEFT_SHOULDER)</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Whenever you need a specific joint by name (shoulders/hips for clothing fit, wrists for gesture position, ankles for a jump-height app, etc.).</li>
+    </ul>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection)</code></summary>
+  <div class="body">
+    <p>A separate, lighter mediapipe model that outputs a per-pixel probability of "this pixel belongs to a person" — a soft silhouette mask, not landmarks.</p>
+    <div class="section-label">Key parameter</div>
+    <ul>
+      <li><code>model_selection</code> — <code>0</code> = general model, <code>1</code> = "landscape" model (faster, tuned for wider shots). We use <code>1</code>.</li>
+    </ul>
+    <div class="section-label">Used in this project</div>
+    <pre>with mp_selfie.SelfieSegmentation(model_selection=1) as seg:
+    result = seg.process(rgb_image)
+mask = result.segmentation_mask  # float32, 0..1 per pixel</pre>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Background removal/blur (video-call style backgrounds), compositing a person onto a new scene, or — as here — restricting where a warped garment is allowed to be drawn so it doesn't spill onto the background.</li>
+    </ul>
+    <div class="tip">This mask is <em>soft</em> (values between 0 and 1, not just 0/1), which is exactly what you want for smooth edges when blending — thresholding it too hard gives jagged silhouettes.</div>
+  </div>
+</details>
+
+</main>
+<footer>Next: <a href="garment.html" style="color:#6ea8fe">Garment Isolation →</a></footer>
+
+<script>
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#list > details').forEach(d => {
+    const text = d.textContent.toLowerCase();
+    d.classList.toggle('hidden', q && !text.includes(q));
+    if (q && text.includes(q)) d.open = true;
+  });
+});
+</script>
+</body>
+</html>

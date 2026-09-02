@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual Try-On — Learning Hub</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1e2230; --text:#e6e8ef; --muted:#9aa2b1;
+    --accent:#6ea8fe; --accent2:#7ee0b8; --border:#2a2f3d; --code:#11141c;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Roboto,Arial,sans-serif;line-height:1.55;}
+  header{padding:48px 24px 24px;text-align:center;border-bottom:1px solid var(--border);}
+  header h1{margin:0 0 8px;font-size:2rem;}
+  header p{color:var(--muted);max-width:640px;margin:0 auto;}
+  nav.grid{max-width:1000px;margin:32px auto;padding:0 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;text-decoration:none;color:var(--text);display:block;transition:transform .15s, border-color .15s;}
+  .card:hover{transform:translateY(-3px);border-color:var(--accent);}
+  .card .tag{display:inline-block;font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--accent2);background:#12321f;padding:3px 8px;border-radius:6px;margin-bottom:10px;}
+  .card h2{margin:0 0 8px;font-size:1.15rem;}
+  .card p{margin:0;color:var(--muted);font-size:.92rem;}
+  footer{text-align:center;color:var(--muted);padding:40px 24px;font-size:.85rem;}
+  code{background:var(--code);padding:2px 6px;border-radius:4px;color:#ffcb8b;font-family:Consolas,Menlo,monospace;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Virtual Try-On — Learning Hub</h1>
+  <p>A walkthrough of every OpenCV / mediapipe / NumPy function used in the <code>virtual-tryon</code> project: what it does, how it works, and when to reach for it.</p>
+</header>
+
+<nav class="grid">
+  <a class="card" href="pose.html">
+    <span class="tag">tryon/pose.py</span>
+    <h2>Pose &amp; Body Segmentation</h2>
+    <p>mediapipe Pose landmarks, Selfie Segmentation, and the color-space conversion they need.</p>
+  </a>
+  <a class="card" href="garment.html">
+    <span class="tag">tryon/garment.py</span>
+    <h2>Garment Isolation</h2>
+    <p>Background removal with rembg, alpha channels, and NumPy tricks to find the garment's shape.</p>
+  </a>
+  <a class="card" href="classic_backend.html">
+    <span class="tag">tryon/classic_backend.py</span>
+    <h2>Warp &amp; Blend Engine</h2>
+    <p>Homography, perspective warping, feathering, and Poisson (seamless) blending.</p>
+  </a>
+  <a class="card" href="io_cli.html">
+    <span class="tag">main.py</span>
+    <h2>Image I/O &amp; CLI</h2>
+    <p>Reading/writing images with OpenCV and wiring up the command-line interface.</p>
+  </a>
+</nav>
+
+<footer>Open any card, then use the search box on that page to filter functions. Each entry shows the real snippet used in this project.</footer>
+</body>
+</html>
