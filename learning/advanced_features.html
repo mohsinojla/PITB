@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced Features — Learning Hub</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a23; --panel2:#1e2230; --text:#e6e8ef; --muted:#9aa2b1;
+    --accent:#6ea8fe; --accent2:#7ee0b8; --border:#2a2f3d; --code:#11141c; --warn:#f7b955;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,Roboto,Arial,sans-serif;line-height:1.6;}
+  .topbar{position:sticky;top:0;background:rgba(15,17,23,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;z-index:10;}
+  .topbar a.back{color:var(--muted);text-decoration:none;font-size:.9rem;}
+  .topbar a.back:hover{color:var(--accent);}
+  .topbar h1{font-size:1.05rem;margin:0;flex:1;}
+  .topbar input{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;width:220px;font-size:.9rem;}
+  main{max-width:900px;margin:0 auto;padding:24px;}
+  .file-tag{color:var(--accent2);font-family:Consolas,Menlo,monospace;font-size:.85rem;}
+  details.fn{background:var(--panel);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;}
+  details.fn[open]{border-color:var(--accent);}
+  summary{cursor:pointer;padding:16px 20px;font-weight:600;list-style:none;display:flex;align-items:center;gap:10px;}
+  summary::-webkit-details-marker{display:none;}
+  summary .arrow{transition:transform .15s;color:var(--muted);}
+  details[open] summary .arrow{transform:rotate(90deg);}
+  summary code{background:var(--code);color:#ffcb8b;padding:3px 8px;border-radius:6px;font-family:Consolas,Menlo,monospace;font-size:.95rem;}
+  .body{padding:0 20px 20px;color:var(--text);}
+  .section-label{color:var(--accent);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;font-weight:700;}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:.85rem;color:#dfe3ee;}
+  ul{margin:6px 0;padding-left:20px;}
+  .muted{color:var(--muted);}
+  .tip{background:#182a1f;border:1px solid #244a34;color:#a9e8c6;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .warn{background:#2b2312;border:1px solid #5a4720;color:var(--warn);padding:10px 14px;border-radius:8px;font-size:.88rem;margin-top:10px;}
+  .hidden{display:none !important;}
+  footer{text-align:center;color:var(--muted);padding:30px;font-size:.85rem;}
+  footer a{color:#6ea8fe;text-decoration:none;}
+  .feature-intro{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:20px;font-size:.92rem;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="back" href="index.html">&larr; Hub</a>
+  <h1>Advanced Features</h1>
+  <input id="search" type="text" placeholder="Filter functions…">
+</div>
+
+<main id="list">
+
+<div class="feature-intro">
+  Four features added on top of the base pipeline: <strong>lighting/color matching</strong> (garments no longer keep their studio lighting), <strong>lower-body support</strong> (pants/skirts, not just shirts), a <strong>--debug mode</strong> (see exactly what the pipeline detected), and a <strong>multi-garment comparison grid</strong> (try several outfits against one photo at once). CLI: <code>python main.py --person p.jpg --cloth a.jpg b.jpg --garment-type auto --debug</code>
+</div>
+
+<details class="fn" open>
+  <summary><span class="arrow">▶</span><code>match_lighting()</code> — Reinhard-style color transfer <span class="file-tag">tryon/lighting.py</span></summary>
+  <div class="body">
+    <p>Product photos are shot under flat studio light; a person's photo almost never is. Without correction, a warped garment keeps its studio brightness/color and visibly "floats" on the person even after blending. This shifts the garment's color statistics (mean &amp; spread, per channel) to match the lighting already present at the spot it's being placed onto.</p>
+    <div class="section-label">Core idea (LAB color space)</div>
+    <pre>src_lab = cv2.cvtColor(garment_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+dst_lab = cv2.cvtColor(person_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+for channel in range(3):                       # L (lightness), A, B (color)
+    src_vals = src_lab[:, :, channel][src_mask]  # garment pixels only
+    dst_vals = dst_lab[:, :, channel][dst_mask]  # person's torso-area pixels only
+    src_mean, src_std = src_vals.mean(), src_vals.std()
+    dst_mean, dst_std = dst_vals.mean(), dst_vals.std()
+
+    channel_data = src_lab[:, :, channel]
+    result[:, :, channel] = (channel_data - src_mean) * (dst_std / src_std) + dst_mean</pre>
+    <div class="section-label">Why LAB, not BGR</div>
+    <p><strong>LAB</strong> separates brightness (<code>L</code>) from color (<code>A</code>=green-red, <code>B</code>=blue-yellow). That means "make it darker like the person's lighting" and "make it warmer/cooler like the person's lighting" can be adjusted independently and cleanly — doing the same statistic-matching directly in BGR would tangle brightness and color together and look worse.</p>
+    <div class="section-label">Why only sample masked pixels</div>
+    <p><code>src_mask</code>/<code>dst_mask</code> restrict the mean/std computation to real garment pixels (not its transparent background) and to the actual blend region on the person (not the whole photo, which might include a bright wall or dark background that would skew the target lighting incorrectly).</p>
+    <div class="section-label">When to reach for this technique</div>
+    <ul>
+      <li>Compositing any two images shot under different lighting — object insertion, "photobashing," harmonizing a cut-out sticker into a scene, day/night image conversion.</li>
+    </ul>
+    <div class="tip">This is the same family of technique as "Reinhard color transfer" (Reinhard et al., 2001) — a classic, cheap alternative to training a neural style-transfer model when you just need statistics to roughly line up.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>LegLandmarks</code> &amp; <code>detect_legs()</code> — lower-body support <span class="file-tag">tryon/pose.py</span></summary>
+  <div class="body">
+    <p>The original pipeline only fit garments to the torso (shoulders → hips), so it could only try on shirts/jackets. This adds a second landmark set — hips → ankles — so pants and skirts warp onto the legs instead.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>def as_quad(self, waist_lift=0.08, ankle_drop=0.05):
+    lh, rh, la, ra = self.left_hip, self.right_hip, self.left_ankle, self.right_ankle
+    leg_h = np.linalg.norm(((la + ra) / 2) - ((lh + rh) / 2))
+    up = np.array([0, -1.0]) * leg_h * waist_lift     # a bit above the hips, for the waistband
+    down = np.array([0, 1.0]) * leg_h * ankle_drop     # a bit past the ankles, for the hem
+    ...</pre>
+    <p>This mirrors <code>TorsoLandmarks.as_quad()</code> exactly, just anchored to different joints — the same "expand the quad slightly past the literal joint positions" trick, because clothing always extends a bit beyond the skeleton (a waistband sits above the hip joint, a shirt collar sits above the shoulder joint).</p>
+    <div class="section-label">Auto garment-type detection</div>
+    <pre>def _guess_garment_type(self, src_quad):
+    width = np.linalg.norm(src_quad[1] - src_quad[0])
+    height = np.linalg.norm(src_quad[3] - src_quad[0])
+    return "lower" if height / width > 1.4 else "upper"</pre>
+    <p>A cheap heuristic (not a classifier): pants/skirts are usually noticeably taller than wide in a front-facing product photo, shirts are closer to square. Override it with <code>--garment-type upper|lower</code> when it guesses wrong.</p>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>draw_quad()</code> &amp; <code>cv2.polylines</code> / <code>cv2.circle</code> / <code>cv2.putText</code> <span class="file-tag">tryon/debug_viz.py</span></summary>
+  <div class="body">
+    <p><code>--debug</code> saves an image showing exactly which 4 points the pipeline computed for the target body region — so if a result looks wrong, you can immediately tell whether pose detection was off, versus a warping/blending problem.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>cv2.polylines(out, [pts], isClosed=True, color=color, thickness=2)  # outline the quad
+for (x, y) in pts:
+    cv2.circle(out, (x, y), 5, color, -1)                            # mark each corner
+cv2.putText(out, label, (pts[0][0], pts[0][1] - 12),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)     # e.g. "upper" / "lower"</pre>
+    <div class="section-label">When to reach for these</div>
+    <ul>
+      <li><code>cv2.polylines</code> — outlining any polygon: detected quads, contours, ROI boundaries.</li>
+      <li><code>cv2.circle</code> — marking individual points: keypoints, landmarks, click locations.</li>
+      <li><code>cv2.putText</code> — burning readable labels/debug info directly into an image so it's self-documenting when shared or saved.</li>
+    </ul>
+    <div class="tip">These three are the bread-and-butter of any CV debugging workflow — draw what the algorithm "thinks it sees" on top of the real image, rather than trying to debug from raw numbers.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>mask_overlay()</code> &amp; <code>cv2.addWeighted</code>-style blending <span class="file-tag">tryon/debug_viz.py</span></summary>
+  <div class="body">
+    <p>Tints an image with a translucent color wherever a mask is active — used to visualize the final blend mask (where the garment will actually be painted) as a green highlight over the person photo.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>mask3 = np.clip(mask, 0, 1)[:, :, None]
+tinted = (image_bgr.astype(np.float32) * (1 - mask3 * alpha) +
+          color_layer.astype(np.float32) * (mask3 * alpha)).astype(np.uint8)</pre>
+    <p>This is the manual equivalent of OpenCV's built-in <code>cv2.addWeighted(src1, alpha, src2, beta, gamma)</code>, done per-pixel with a spatially-varying alpha (built-in <code>addWeighted</code> only supports one global blend weight for the whole image, not a per-pixel mask).</p>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Visualizing any mask/heatmap/segmentation result on top of the original image — the standard way to "see" what a mask covers instead of looking at a separate black-and-white image.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>make_comparison_grid()</code> — <code>cv2.resize</code>, <code>cv2.copyMakeBorder</code>, <code>cv2.hconcat</code> <span class="file-tag">main.py</span></summary>
+  <div class="body">
+    <p>When multiple <code>--cloth</code> images are passed, this builds one side-by-side image (original + every try-on result, each labeled) instead of making you open several files to compare outfits — directly serving the "check clothes before buying" goal when comparing options.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>scale = tile_height / img.shape[0]
+tile = cv2.resize(img, (int(img.shape[1] * scale), tile_height))          # normalize every tile to the same height
+tile = cv2.copyMakeBorder(tile, 0, 36, 0, 0, cv2.BORDER_CONSTANT, value=(30, 30, 30))  # add a label strip
+cv2.putText(tile, label, (8, tile.shape[0] - 12), ...)
+...
+grid = cv2.hconcat(padded)   # glue all tiles into one wide image</pre>
+    <div class="section-label">Function reference</div>
+    <ul>
+      <li><code>cv2.resize(img, (w, h))</code> — change an image's pixel dimensions; here used to make every result the same height before concatenating.</li>
+      <li><code>cv2.copyMakeBorder(src, top, bottom, left, right, borderType, value)</code> — pad an image with a solid color border; here it reserves space at the bottom for a text label, and later pads narrower tiles to a common width.</li>
+      <li><code>cv2.hconcat([img1, img2, ...])</code> — stitch images of the <em>same height</em> side by side into one wide image (there's a matching <code>cv2.vconcat</code> for stacking images of the same width vertically).</li>
+    </ul>
+    <div class="section-label">When to reach for these</div>
+    <ul>
+      <li>Building contact sheets, before/after comparisons, thumbnail grids, or any "many small images → one summary image" output.</li>
+    </ul>
+    <div class="warn"><code>hconcat</code>/<code>vconcat</code> require every input to already match on the non-concatenated dimension (same height for hconcat, same width for vconcat) — that's why the code resizes and pads first.</div>
+  </div>
+</details>
+
+</main>
+<footer><a href="io_cli.html">← Image I/O &amp; CLI</a> &nbsp;·&nbsp; <a href="index.html">Back to Hub</a></footer>
+
+<script>
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll('#list > details').forEach(d => {
+    const text = d.textContent.toLowerCase();
+    d.classList.toggle('hidden', q && !text.includes(q));
+    if (q && text.includes(q)) d.open = true;
+  });
+});
+</script>
+</body>
+</html>

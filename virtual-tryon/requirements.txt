@@ -1,6 +1,10 @@
 opencv-python>=4.9.0
 opencv-contrib-python>=4.9.0
-mediapipe>=0.10.9
+# Pinned: mediapipe 1.0+ removed the legacy `solutions` API (Pose,
+# SelfieSegmentation) this project uses, and newer protobuf removes an API
+# 0.10.x's generated protos need. Both pins are required, not just suggested.
+mediapipe==0.10.14
+protobuf==4.25.3
 numpy>=1.24
 Pillow>=10.0
 rembg>=2.0.57

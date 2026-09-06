@@ -30,7 +30,29 @@ class TorsoLandmarks:
         return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
 
 
-def detect_torso(person_bgr: np.ndarray) -> TorsoLandmarks:
+@dataclass
+class LegLandmarks:
+    left_hip: np.ndarray
+    right_hip: np.ndarray
+    left_ankle: np.ndarray
+    right_ankle: np.ndarray
+
+    def as_quad(self, waist_lift=0.08, ankle_drop=0.05):
+        """Lower-body quad from the waist down to the ankles, for pants/
+        skirts. Lifted slightly above the hips (waistband) and dropped a
+        little past the ankles (hem)."""
+        lh, rh, la, ra = self.left_hip, self.right_hip, self.left_ankle, self.right_ankle
+        leg_h = np.linalg.norm(((la + ra) / 2) - ((lh + rh) / 2))
+        up = np.array([0, -1.0]) * leg_h * waist_lift
+        down = np.array([0, 1.0]) * leg_h * ankle_drop
+        top_left = lh + up
+        top_right = rh + up
+        bottom_left = la + down
+        bottom_right = ra + down
+        return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
+
+
+def _run_pose(person_bgr: np.ndarray):
     h, w = person_bgr.shape[:2]
     with mp_pose.Pose(static_image_mode=True, model_complexity=2) as pose:
         result = pose.process(cv2.cvtColor(person_bgr, cv2.COLOR_BGR2RGB))
@@ -44,11 +66,26 @@ def detect_torso(person_bgr: np.ndarray) -> TorsoLandmarks:
         p = lm[landmark]
         return np.array([p.x * w, p.y * h])
 
+    return pt, pts
+
+
+def detect_torso(person_bgr: np.ndarray) -> TorsoLandmarks:
+    pt, pts = _run_pose(person_bgr)
     return TorsoLandmarks(
         left_shoulder=pt(pts.LEFT_SHOULDER),
         right_shoulder=pt(pts.RIGHT_SHOULDER),
         left_hip=pt(pts.LEFT_HIP),
         right_hip=pt(pts.RIGHT_HIP),
+    )
+
+
+def detect_legs(person_bgr: np.ndarray) -> LegLandmarks:
+    pt, pts = _run_pose(person_bgr)
+    return LegLandmarks(
+        left_hip=pt(pts.LEFT_HIP),
+        right_hip=pt(pts.RIGHT_HIP),
+        left_ankle=pt(pts.LEFT_ANKLE),
+        right_ankle=pt(pts.RIGHT_ANKLE),
     )
 
 
