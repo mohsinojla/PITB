@@ -11,7 +11,7 @@ import numpy as np
 
 from .base import TryOnBackend
 from .pose import detect_torso, detect_legs, segment_person
-from .garment import remove_background, garment_quad
+from .garment import remove_background, garment_quad, strip_hanger
 from .lighting import match_lighting
 from .debug_viz import draw_quad, mask_overlay
 
@@ -50,6 +50,7 @@ class ClassicWarpBackend(TryOnBackend):
             garment_bgra = garment_bgr_or_bgra
         else:
             garment_bgra = remove_background(garment_bgr_or_bgra)
+        garment_bgra = strip_hanger(garment_bgra)
         src_quad = garment_quad(garment_bgra)
 
         garment_type = self.garment_type

@@ -161,6 +161,78 @@ grid = cv2.hconcat(padded)   # glue all tiles into one wide image</pre>
   </div>
 </details>
 
+<div class="feature-intro" style="margin-top:28px;">
+  <strong>Case study.</strong> The two entries below aren't hypothetical — they're bugs found by actually running the pipeline on a real photo (a chest-up headshot) and a real product photo (a shirt hanging from a wooden hanger), and reading the intermediate debug images to see exactly where it broke.
+</div>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span>Landmark <code>.visibility</code> — don't trust extrapolated joints <span class="file-tag">tryon/pose.py</span></summary>
+  <div class="body">
+    <p>Every mediapipe landmark carries a <code>.visibility</code> score (0–1), not just an <code>(x, y)</code> position. When a joint is actually out of frame — e.g. the hips in a chest-up headshot — mediapipe still returns coordinates for it (the model always outputs all 33 points), but they're a low-confidence <em>guess</em>, not an observation.</p>
+    <div class="section-label">What actually happened</div>
+    <p>Running the pipeline on a real bust-photo, the hip landmarks came back at <code>visibility ≈ 0.25–0.31</code> and collapsed toward the image center instead of spreading to plausible hip positions. Feeding that straight into the torso quad produced a near-triangular target region; warping a rectangular shirt image into a triangle is a near-singular homography, which exploded into a huge blurry blob covering half the photo.</p>
+    <div class="section-label">The fix</div>
+    <pre>VISIBILITY_THRESHOLD = 0.5
+
+if left_hip_vis < VISIBILITY_THRESHOLD or right_hip_vis < VISIBILITY_THRESHOLD:
+    # Hips aren't reliably visible -- synthesize a plausible hip line from
+    # the shoulders instead of trusting mediapipe's low-confidence guess.
+    shoulder_vec = right_shoulder - left_shoulder
+    shoulder_width = np.linalg.norm(shoulder_vec)
+    perp = np.array([-shoulder_vec[1], shoulder_vec[0]])   # perpendicular to the shoulder line
+    if perp[1] < 0:
+        perp = -perp                                        # make sure it points down the image
+    down_dir = perp / np.linalg.norm(perp)
+    hip_mid = shoulder_mid + down_dir * shoulder_width * 1.35   # typical torso-height:shoulder-width ratio
+    ...</pre>
+    <div class="section-label">The general lesson</div>
+    <ul>
+      <li>Any model that outputs a confidence/visibility score alongside a prediction is telling you when to <em>not</em> trust that prediction — checking only "did it return a value" isn't the same as checking "is this value real."</li>
+      <li>Getting a rotated perpendicular to a 2D vector <code>(dx, dy)</code> is just <code>(-dy, dx)</code> or <code>(dy, -dx)</code> — pick whichever one points the direction you need (here, checked with <code>if perp[1] < 0</code> since image y grows downward).</li>
+    </ul>
+    <div class="tip">This still isn't a real measurement — it's a plausible fallback. A photo that actually shows the torso will always fit better than one where the hips had to be guessed.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>strip_hanger()</code> — a segmentation model can't tell "clothing" from "prop" <span class="file-tag">tryon/garment.py</span></summary>
+  <div class="body">
+    <p>Background removal (rembg) does foreground/background segmentation — it isolates "the salient object," not specifically "the garment." A shirt photographed on a wooden hanger produces one connected foreground blob: hook, hanger bar, <em>and</em> shirt, all equally "foreground." Two different rembg models (a 4.7MB one and a 176MB one) both kept the hanger — swapping models doesn't fix this, because it's not a quality problem, it's a category the model was never asked to distinguish.</p>
+    <div class="section-label">What actually happened</div>
+    <p>The garment-quad detector originally scanned a thin band near the top of the mask to find "shoulder width." The hanger's hook is only a few pixels wide right at the top, so it got measured as the shoulder width — producing a source rectangle far narrower than the real shirt, and a wildly skewed warp. The result: the hanger, badly stretched, rendered directly on the person's chest.</p>
+    <div class="section-label">The fix — verified empirically, not guessed</div>
+    <pre># Printed the mask's per-row pixel width near the top to see the actual
+# shape of the problem before writing any fix:
+for y in range(y_min, y_min + 140, 4):
+    cols = np.where(mask[y, :] > 0)[0]
+    print(y, cols.max() - cols.min())
+# -> width grew continuously from ~7px (hook) with no clean break before
+#    the real shoulders -- ruled out any "find the width jump" heuristic.
+
+# Rendered the mask with different top crop fractions and looked at each
+# one directly, instead of assuming a number:
+for frac in [0.10, 0.13, 0.15, 0.18, 0.20]:
+    test = mask.copy()
+    test[:int(h * frac), :] = 0
+    cv2.imwrite(f'debug_{frac}.png', test * 255)
+# -> 0.10-0.15 all fully cleared the hook+hanger in the actual test photo</pre>
+    <pre>def strip_hanger(garment_bgra, top_frac=0.16):
+    alpha = garment_bgra[:, :, 3]
+    ys, _ = np.where(alpha > 10)
+    y_min, y_max = ys.min(), ys.max()
+    cutoff = int(y_min + (y_max - y_min) * top_frac)
+    result = garment_bgra.copy()
+    result[:cutoff, :, 3] = 0     # discard everything above the cutoff
+    return result</pre>
+    <div class="section-label">The general lesson</div>
+    <ul>
+      <li>Don't guess a magic-number threshold and move on — render the intermediate result and actually look at it. The right value here (0.16, not an arbitrary "looks about right" guess) came from comparing several crop levels side by side.</li>
+      <li>This is a blunt heuristic with a known cost: a garment photo with <em>no</em> hanger (flat lay, worn on a model) loses a bit of real top-of-garment area for no benefit. Documented as a known trade-off rather than hidden — a fix that works for the tested case but silently breaks another case is worse than an honest limitation.</li>
+      <li>When a general-purpose model (segmentation, detection, classification) doesn't distinguish the category you actually care about, no amount of picking a "better" pretrained model fixes it — you need a task-specific step on top, or a model trained specifically for that distinction.</li>
+    </ul>
+  </div>
+</details>
+
 </main>
 <footer><a href="io_cli.html">← Image I/O &amp; CLI</a> &nbsp;·&nbsp; <a href="index.html">Back to Hub</a></footer>
 

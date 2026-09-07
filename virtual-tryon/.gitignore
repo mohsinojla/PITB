@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 output/
 .venv/
+
+# Test photos are the user's own local test data (a real person's photo,
+# a sourced product photo) -- not something to publish to a public repo.
+samples/*.jpg
+samples/*.jpeg
+samples/*.png

@@ -8,6 +8,17 @@ import mediapipe as mp
 mp_pose = mp.solutions.pose
 mp_selfie = mp.solutions.selfie_segmentation
 
+# Below this mediapipe visibility score, a landmark is an extrapolated guess
+# (e.g. hips estimated for a chest-up photo where they're out of frame)
+# rather than something actually seen in the image, and shouldn't be trusted
+# for placing a garment corner.
+VISIBILITY_THRESHOLD = 0.5
+
+# Typical human proportion: shoulder-to-hip distance is roughly this
+# fraction of shoulder width. Used to synthesize a plausible torso bottom
+# edge when the real hip landmarks are unreliable.
+TORSO_HEIGHT_TO_SHOULDER_WIDTH = 1.35
+
 
 @dataclass
 class TorsoLandmarks:
@@ -54,7 +65,10 @@ class LegLandmarks:
 
 def _run_pose(person_bgr: np.ndarray):
     h, w = person_bgr.shape[:2]
-    with mp_pose.Pose(static_image_mode=True, model_complexity=2) as pose:
+    # model_complexity=1 ("full") ships with mediapipe and is already cached
+    # locally, unlike complexity=2 ("heavy") which requires a runtime download
+    # from storage.googleapis.com that can time out on a slow/unstable connection.
+    with mp_pose.Pose(static_image_mode=True, model_complexity=1) as pose:
         result = pose.process(cv2.cvtColor(person_bgr, cv2.COLOR_BGR2RGB))
     if not result.pose_landmarks:
         raise RuntimeError("No person/pose detected in the person image.")
@@ -64,28 +78,71 @@ def _run_pose(person_bgr: np.ndarray):
 
     def pt(landmark):
         p = lm[landmark]
-        return np.array([p.x * w, p.y * h])
+        return np.array([p.x * w, p.y * h]), p.visibility
 
     return pt, pts
 
 
 def detect_torso(person_bgr: np.ndarray) -> TorsoLandmarks:
     pt, pts = _run_pose(person_bgr)
+    left_shoulder, _ = pt(pts.LEFT_SHOULDER)
+    right_shoulder, _ = pt(pts.RIGHT_SHOULDER)
+    left_hip, left_hip_vis = pt(pts.LEFT_HIP)
+    right_hip, right_hip_vis = pt(pts.RIGHT_HIP)
+
+    # If the hips are out of frame (common in a chest-up/headshot photo),
+    # mediapipe still returns *something* for them, but it's an extrapolated
+    # guess with low confidence -- often collapsed toward the image center
+    # rather than actually below the shoulders. Trusting it produces a
+    # badly skewed torso quad. Synthesize a plausible hip line instead,
+    # using the shoulder line and a typical body proportion.
+    if left_hip_vis < VISIBILITY_THRESHOLD or right_hip_vis < VISIBILITY_THRESHOLD:
+        shoulder_vec = right_shoulder - left_shoulder
+        shoulder_width = np.linalg.norm(shoulder_vec)
+        shoulder_dir = shoulder_vec / (shoulder_width + 1e-6)
+        shoulder_mid = (left_shoulder + right_shoulder) / 2
+
+        perp = np.array([-shoulder_vec[1], shoulder_vec[0]])
+        if perp[1] < 0:  # image y grows downward; make sure this points down
+            perp = -perp
+        down_dir = perp / (np.linalg.norm(perp) + 1e-6)
+
+        hip_mid = shoulder_mid + down_dir * shoulder_width * TORSO_HEIGHT_TO_SHOULDER_WIDTH
+        half_width = shoulder_width * 0.45  # hips are typically a bit narrower than shoulders
+        left_hip = hip_mid - shoulder_dir * half_width
+        right_hip = hip_mid + shoulder_dir * half_width
+
+        img_h = person_bgr.shape[0]
+        left_hip[1] = min(left_hip[1], img_h - 1)
+        right_hip[1] = min(right_hip[1], img_h - 1)
+
     return TorsoLandmarks(
-        left_shoulder=pt(pts.LEFT_SHOULDER),
-        right_shoulder=pt(pts.RIGHT_SHOULDER),
-        left_hip=pt(pts.LEFT_HIP),
-        right_hip=pt(pts.RIGHT_HIP),
+        left_shoulder=left_shoulder,
+        right_shoulder=right_shoulder,
+        left_hip=left_hip,
+        right_hip=right_hip,
     )
 
 
 def detect_legs(person_bgr: np.ndarray) -> LegLandmarks:
     pt, pts = _run_pose(person_bgr)
+    left_hip, left_hip_vis = pt(pts.LEFT_HIP)
+    right_hip, right_hip_vis = pt(pts.RIGHT_HIP)
+    left_ankle, left_ankle_vis = pt(pts.LEFT_ANKLE)
+    right_ankle, right_ankle_vis = pt(pts.RIGHT_ANKLE)
+
+    if min(left_hip_vis, right_hip_vis, left_ankle_vis, right_ankle_vis) < VISIBILITY_THRESHOLD:
+        raise RuntimeError(
+            "Hips/ankles aren't clearly visible in the person photo, so a "
+            "lower-body garment (pants/skirt) can't be fitted reliably. "
+            "Use a photo showing the full body, or try --garment-type upper."
+        )
+
     return LegLandmarks(
-        left_hip=pt(pts.LEFT_HIP),
-        right_hip=pt(pts.RIGHT_HIP),
-        left_ankle=pt(pts.LEFT_ANKLE),
-        right_ankle=pt(pts.RIGHT_ANKLE),
+        left_hip=left_hip,
+        right_hip=right_hip,
+        left_ankle=left_ankle,
+        right_ankle=right_ankle,
     )
 
 
