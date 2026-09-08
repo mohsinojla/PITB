@@ -20,11 +20,13 @@ import cv2
 import numpy as np
 
 from tryon.classic_backend import ClassicWarpBackend
+from tryon.io_utils import imread_oriented
 
 
-def build_backend(name: str, garment_type: str, debug_dir):
+def build_backend(name: str, garment_type: str, debug_dir, flip_garment: bool, opacity: float):
     if name == "classic":
-        return ClassicWarpBackend(garment_type=garment_type, debug_dir=debug_dir)
+        return ClassicWarpBackend(garment_type=garment_type, debug_dir=debug_dir,
+                                   flip_garment=flip_garment, opacity=opacity)
     if name == "diffusion":
         from tryon.diffusion_backend import DiffusionTryOnBackend
         return DiffusionTryOnBackend()
@@ -64,7 +66,17 @@ def main():
                          help="Force treating the garment as a top or bottom, or auto-detect (default).")
     parser.add_argument("--debug", action="store_true",
                          help="Save intermediate landmark/mask visualizations next to the output.")
+    parser.add_argument("--flip-garment", action="store_true",
+                         help="Horizontally mirror the garment before fitting it. Useful when a "
+                              "product photo faces the opposite way from the person photo.")
+    parser.add_argument("--opacity", type=float, default=1.0,
+                         help="Blend strength of the garment over the person, from 0 (invisible) "
+                              "to 1 (fully opaque, default). Useful for a subtler preview.")
     args = parser.parse_args()
+
+    if not 0.0 <= args.opacity <= 1.0:
+        print("Error: --opacity must be between 0 and 1.", file=sys.stderr)
+        sys.exit(1)
 
     person_path = Path(args.person)
     cloth_paths = [Path(p) for p in args.cloth]
@@ -73,7 +85,7 @@ def main():
             print(f"Error: file not found: {p}", file=sys.stderr)
             sys.exit(1)
 
-    person_bgr = cv2.imread(str(person_path))
+    person_bgr = imread_oriented(str(person_path))
     if person_bgr is None:
         print("Error: could not read the person image (unsupported format?).", file=sys.stderr)
         sys.exit(1)
@@ -84,13 +96,14 @@ def main():
 
     results = []
     for cloth_path in cloth_paths:
-        cloth_bgr = cv2.imread(str(cloth_path))
+        cloth_bgr = imread_oriented(str(cloth_path))
         if cloth_bgr is None:
             print(f"Error: could not read garment image: {cloth_path}", file=sys.stderr)
             sys.exit(1)
 
         this_debug_dir = (debug_dir / cloth_path.stem) if debug_dir else None
-        backend = build_backend(args.backend, args.garment_type, this_debug_dir)
+        backend = build_backend(args.backend, args.garment_type, this_debug_dir,
+                                 args.flip_garment, args.opacity)
 
         print(f"Trying on {cloth_path.name}...")
         result = backend.run(person_bgr, cloth_bgr)

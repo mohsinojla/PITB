@@ -18,17 +18,23 @@ from .debug_viz import draw_quad, mask_overlay
 
 class ClassicWarpBackend(TryOnBackend):
     def __init__(self, feather_px: int = 15, person_mask_threshold: float = 0.4,
-                 garment_type: str = "auto", debug_dir: str | None = None):
+                 garment_type: str = "auto", debug_dir: str | None = None,
+                 flip_garment: bool = False, opacity: float = 1.0):
         """
         garment_type: "upper" (shirt/jacket/dress top), "lower" (pants/skirt),
             or "auto" to guess from the garment photo's proportions.
         debug_dir: if set, intermediate visualizations (detected landmarks,
             garment cutout mask, blend mask) are saved there for inspection.
+        flip_garment: horizontally mirror the garment before fitting it, for
+            product photos shot facing the opposite way from the person photo.
+        opacity: blend strength of the garment over the person, 0..1.
         """
         self.feather_px = feather_px
         self.person_mask_threshold = person_mask_threshold
         self.garment_type = garment_type
         self.debug_dir = Path(debug_dir) if debug_dir else None
+        self.flip_garment = flip_garment
+        self.opacity = opacity
 
     def _guess_garment_type(self, src_quad: np.ndarray) -> str:
         """Heuristic: pants/skirts are noticeably taller (relative to their
@@ -51,6 +57,8 @@ class ClassicWarpBackend(TryOnBackend):
         else:
             garment_bgra = remove_background(garment_bgr_or_bgra)
         garment_bgra = strip_hanger(garment_bgra)
+        if self.flip_garment:
+            garment_bgra = cv2.flip(garment_bgra, 1)
         src_quad = garment_quad(garment_bgra)
 
         garment_type = self.garment_type
@@ -95,5 +103,14 @@ class ClassicWarpBackend(TryOnBackend):
             mask3 = combined_mask[:, :, None]
             result = (warped_rgb.astype(np.float32) * mask3 +
                       person_bgr.astype(np.float32) * (1 - mask3)).astype(np.uint8)
+
+        if self.opacity < 1.0:
+            # seamlessClone treats its mask as a hard region (any nonzero
+            # pixel is "inside"), so it can't take a graded weight itself --
+            # fade the whole cloned result back toward the original photo
+            # instead, weighted by where the garment actually landed.
+            fade = (combined_mask * self.opacity)[:, :, None]
+            result = (result.astype(np.float32) * fade +
+                      person_bgr.astype(np.float32) * (1 - fade)).astype(np.uint8)
 
         return result

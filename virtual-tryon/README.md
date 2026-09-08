@@ -26,6 +26,10 @@ python main.py --person person.jpg --cloth shirt1.jpg shirt2.jpg pants.jpg --out
 - `--output`: where to write the result (default `output/result.jpg`).
 - `--garment-type {auto,upper,lower}`: fit to the torso (shirts/jackets/dresses) or the legs (pants/skirts). `auto` (default) guesses from the garment photo's proportions.
 - `--debug`: saves the detected landmarks, garment cutout, and blend mask next to the output, for diagnosing a bad result.
+- `--flip-garment`: horizontally mirrors the garment before fitting it. Useful when a product photo faces the opposite way from the person photo (e.g. the garment is shot facing right but the person faces left).
+- `--opacity`: blend strength of the garment over the person, from `0` (invisible, original photo) to `1` (fully opaque, default). Handy for a subtler preview or to sanity-check how well the garment is aligned before committing to a full-strength blend.
+
+Person and garment photos are auto-oriented using their EXIF rotation tag before processing, so a photo taken sideways/upside-down on a phone doesn't silently break pose or garment detection.
 
 ## How it works (classic backend, default)
 
@@ -47,11 +51,12 @@ For genuinely photoreal results, swap in a diffusion-based virtual try-on model 
 ```
 main.py                    CLI entrypoint + multi-garment comparison grid
 tryon/base.py               Backend interface
+tryon/io_utils.py            EXIF-aware image loading
 tryon/pose.py                Pose + body segmentation (mediapipe), torso and leg landmarks
 tryon/garment.py             Garment background removal + shape detection
 tryon/lighting.py            Lighting/color matching (LAB statistic transfer)
 tryon/debug_viz.py           --debug landmark/mask visualizations
-tryon/classic_backend.py     Default OpenCV warp + blend engine
+tryon/classic_backend.py     Default OpenCV warp + blend engine (garment flip, opacity blending)
 tryon/diffusion_backend.py   Stub/upgrade path for a learned model
 ```
 
