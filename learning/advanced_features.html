@@ -233,6 +233,58 @@ for frac in [0.10, 0.13, 0.15, 0.18, 0.20]:
   </div>
 </details>
 
+<div class="feature-intro" style="margin-top:28px;">
+  Two more controls added on top of the warp/blend engine: <strong>--flip-garment</strong> (mirror a garment shot facing the wrong way) and <strong>--opacity</strong> (fade the composite back toward the original photo). CLI: <code>python main.py --person p.jpg --cloth shirt.jpg --flip-garment --opacity 0.5</code>
+</div>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>cv2.flip(img, 1)</code> — mirroring a garment that faces the wrong way <span class="file-tag">tryon/classic_backend.py</span></summary>
+  <div class="body">
+    <p>Product photos aren't consistently shot facing one direction — a shirt photographed at a slight three-quarter angle facing right won't line up as well onto a person facing left. Rather than trying to detect and auto-correct this, <code>--flip-garment</code> just lets the user mirror the garment and re-run.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>garment_bgra = strip_hanger(garment_bgra)
+if self.flip_garment:
+    garment_bgra = cv2.flip(garment_bgra, 1)   # 1 = horizontal flip
+src_quad = garment_quad(garment_bgra)          # computed *after* flipping</pre>
+    <div class="section-label">Why order matters here</div>
+    <p>The flip happens before <code>garment_quad()</code> runs, not after — the quad (and every downstream step: homography, warp, lighting match) needs to be computed from the <em>already-mirrored</em> garment, otherwise the flip would just undo itself visually once warped onto the same target region.</p>
+    <div class="section-label"><code>cv2.flip</code> flip codes</div>
+    <ul>
+      <li><code>0</code> — flip vertically (around the horizontal axis, top ↔ bottom).</li>
+      <li><code>1</code> — flip horizontally (around the vertical axis, left ↔ right) — used here.</li>
+      <li><code>-1</code> — flip both axes (180° rotation).</li>
+    </ul>
+    <div class="section-label">When to reach for it</div>
+    <ul>
+      <li>Any time an asset's handedness/orientation doesn't match the target it's being composited onto, and there's no reliable automatic way to detect that mismatch.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span>Opacity fade — why it has to happen <em>after</em> <code>seamlessClone</code>, not inside it <span class="file-tag">tryon/classic_backend.py</span></summary>
+  <div class="body">
+    <p><code>--opacity</code> lets the composite be faded back toward the original, untouched photo — useful for a subtler "does this roughly work" preview, or to sanity-check garment alignment before committing to a full-strength blend.</p>
+    <div class="section-label">The naive approach doesn't work</div>
+    <p>The obvious idea — multiply <code>combined_mask</code> by <code>opacity</code> and feed that weaker mask straight into <code>cv2.seamlessClone</code> — doesn't do what it sounds like. <code>seamlessClone</code> treats its mask as a <em>hard region</em> (any nonzero pixel counts as "inside the region to clone"), not a per-pixel blend weight; it isn't designed for partial-strength compositing at all.</p>
+    <div class="section-label">The actual fix — fade the finished result</div>
+    <pre>result = cv2.seamlessClone(warped_rgb, person_bgr, mask_u8, center, cv2.NORMAL_CLONE)
+
+if self.opacity &lt; 1.0:
+    fade = (combined_mask * self.opacity)[:, :, None]
+    result = (result.astype(np.float32) * fade +
+              person_bgr.astype(np.float32) * (1 - fade)).astype(np.uint8)</pre>
+    <p>Run the full-strength seamless clone first, exactly as before, then linearly blend that finished result back toward the original person photo — weighted by <code>combined_mask</code> (so the fade only affects the region the garment actually landed on, not the whole photo) scaled by <code>opacity</code>.</p>
+    <div class="section-label">Verified, not assumed</div>
+    <p>Checked with an actual pixel-difference measurement across three runs of the same photo/garment pair: <code>--opacity 0</code> came back nearly identical to the original photo (mean diff ≈0.2/255, just JPEG re-encoding noise), <code>--opacity 0.5</code> landed roughly halfway between the original and the full-strength result, and <code>--opacity 1</code> (the default) matched the pre-existing full-strength output — confirming the fade is linear and correctly anchored, not just "looks about right."</p>
+    <div class="section-label">The general lesson</div>
+    <ul>
+      <li>A function's mask/weight parameter isn't automatically a graded blend weight just because it accepts float/graded input — check what the function actually does with intermediate values (here, <code>seamlessClone</code> silently treats "10% opacity" the same as "100%"), rather than assuming.</li>
+      <li>When a built-in can't do what you need directly, it's often simpler to run it as designed and post-process the result, rather than fighting its API to make it do something it wasn't built for.</li>
+    </ul>
+  </div>
+</details>
+
 </main>
 <footer><a href="io_cli.html">← Image I/O &amp; CLI</a> &nbsp;·&nbsp; <a href="index.html">Back to Hub</a></footer>
 

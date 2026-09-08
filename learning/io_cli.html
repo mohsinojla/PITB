@@ -47,19 +47,25 @@
 <main id="list">
 
 <details class="fn" open>
-  <summary><span class="arrow">▶</span><code>cv2.imread(path)</code></summary>
+  <summary><span class="arrow">▶</span><code>ImageOps.exif_transpose()</code> — load photos the way they actually look <span class="file-tag">tryon/io_utils.py</span></summary>
   <div class="body">
-    <p>Loads an image file from disk into a NumPy array (height × width × 3, BGR order, <code>uint8</code>).</p>
+    <p>A phone almost never rotates the actual pixels when you take a sideways/upside-down shot — it just writes an EXIF <code>Orientation</code> tag and lets the viewer app rotate on display. <code>cv2.imread</code> ignores that tag completely, so a "portrait" phone photo can load as landscape-and-rotated with no error at all — it just quietly breaks pose detection (mediapipe expects an upright person) and garment quad detection alike.</p>
     <div class="section-label">Used in this project</div>
-    <pre>person_bgr = cv2.imread(str(person_path))
-if person_bgr is None:
-    # file existed but wasn't a readable image (bad format/corrupt)
-    ...</pre>
+    <pre>def imread_oriented(path):
+    with Image.open(path) as img:
+        img = ImageOps.exif_transpose(img)   # actually rotates the pixels per the EXIF tag
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGBA" if "A" in img.mode else "RGB")
+        arr = np.array(img)
+    return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)   # Pillow is RGB, OpenCV wants BGR</pre>
+    <p><code>main.py</code> now calls this instead of <code>cv2.imread</code> directly, for both the person photo and every garment photo — it mirrors <code>cv2.imread</code>'s "return <code>None</code> on failure" contract (wrapped in a <code>try/except</code>) so the rest of the CLI's error handling didn't need to change.</p>
+    <div class="section-label">Verified, not assumed</div>
+    <p>Tested by rotating a sample photo's pixels 90° and hand-writing an EXIF orientation tag onto the copy, then confirming <code>imread_oriented</code> on that file reproduced the original (unrotated) pixels — a round-trip check, not just "it ran without an exception."</p>
     <div class="section-label">Gotchas</div>
     <ul>
-      <li>Returns <code>None</code> on failure instead of raising an exception — always check for <code>None</code>, don't assume a successful read.</li>
+      <li><code>cv2.imread</code> returns <code>None</code> on failure instead of raising — always check for <code>None</code>, don't assume a successful read. This still applies here.</li>
+      <li>Pillow images are <strong>RGB</strong> channel order; OpenCV arrays are <strong>BGR</strong> — always <code>cv2.cvtColor(..., cv2.COLOR_RGB2BGR)</code> (or <code>RGBA2BGRA</code>) when handing a Pillow-loaded array to OpenCV, or colors come out swapped (red ↔ blue).</li>
       <li>Takes a plain string path — on Windows, wrap <code>pathlib.Path</code> objects in <code>str(...)</code> first.</li>
-      <li>Ignores alpha by default; pass <code>cv2.IMREAD_UNCHANGED</code> to keep a 4th (alpha) channel if the source file has one.</li>
     </ul>
   </div>
 </details>
@@ -86,13 +92,23 @@ if person_bgr is None:
     <pre>parser = argparse.ArgumentParser(description="Try clothes on a person photo before buying.")
 parser.add_argument("--person", required=True, help="Path to the photo of the person.")
 parser.add_argument("--backend", choices=["classic", "diffusion"], default="classic")
+parser.add_argument("--flip-garment", action="store_true", help="...")
+parser.add_argument("--opacity", type=float, default=1.0, help="...")
 args = parser.parse_args()
-# args.person, args.cloth, args.output, args.backend</pre>
+# args.person, args.cloth, args.output, args.backend, args.flip_garment, args.opacity</pre>
     <div class="section-label">When to reach for it</div>
     <ul>
       <li>Any script meant to be run from a terminal with configurable inputs, rather than hard-coded file paths.</li>
       <li><code>choices=[...]</code> gives you free validation — an invalid <code>--backend</code> value fails immediately with a clear error, no manual <code>if</code> checks needed.</li>
+      <li><code>action="store_true"</code> — a flag needing no value, e.g. <code>--flip-garment</code>; becomes <code>False</code> unless passed, then <code>True</code>. Note the dash in the flag name becomes an underscore on the parsed object: <code>args.flip_garment</code>.</li>
+      <li><code>type=float</code> — argparse only ever hands you raw strings from <code>sys.argv</code> unless told otherwise; <code>type=float</code> converts <code>"0.5"</code> → <code>0.5</code> (and rejects non-numeric input with a clear error) rather than the script doing <code>float(args.opacity)</code> itself everywhere it's used.</li>
     </ul>
+    <div class="section-label">Range validation argparse can't do alone</div>
+    <p><code>choices=[...]</code> only works for a fixed, enumerable set of values — it can't express "any float between 0 and 1." For <code>--opacity</code>, that's checked manually right after <code>parse_args()</code>:</p>
+    <pre>if not 0.0 &lt;= args.opacity &lt;= 1.0:
+    print("Error: --opacity must be between 0 and 1.", file=sys.stderr)
+    sys.exit(1)</pre>
+    <div class="tip">Chained comparisons (<code>0.0 &lt;= x &lt;= 1.0</code>) read naturally in Python and evaluate exactly like the math notation they mirror — no need for <code>0.0 &lt;= x and x &lt;= 1.0</code>.</div>
   </div>
 </details>
 
