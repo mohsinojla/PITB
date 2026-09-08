@@ -2,6 +2,10 @@
 
 Try clothes on a photo of yourself before buying.
 
+> New to this project or setting it up on a fresh machine? See
+> [MANUAL.md](MANUAL.md) for a full step-by-step guide, from installing
+> Python through troubleshooting a bad result.
+
 ## Install
 
 ```bash
@@ -60,4 +64,6 @@ tryon/classic_backend.py     Default OpenCV warp + blend engine (garment flip, o
 tryon/diffusion_backend.py   Stub/upgrade path for a learned model
 ```
 
-See [learning/](../learning/index.html) for a walkthrough of every OpenCV/mediapipe/NumPy function used here.
+See [MANUAL.md](MANUAL.md) for the full setup-from-scratch guide (with
+troubleshooting), and [learning/](../learning/index.html) for a walkthrough of
+every OpenCV/mediapipe/NumPy function used here.

@@ -11,7 +11,9 @@ built, and how it was tested).
   user try a garment on a photo of themselves before buying, using classical
   computer vision (pose detection, background removal, perspective warping,
   lighting matching, seamless blending). See
-  [virtual-tryon/README.md](virtual-tryon/README.md) for install/usage.
+  [virtual-tryon/README.md](virtual-tryon/README.md) for install/usage, or
+  [virtual-tryon/MANUAL.md](virtual-tryon/MANUAL.md) for a full step-by-step
+  setup guide from a fresh machine.
 - **[learning/](learning/index.html)** — write-ups documenting the OpenCV /
   mediapipe / NumPy concepts used while building the tool, kept as a personal
   reference and to show the reasoning behind implementation choices.
