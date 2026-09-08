@@ -17,7 +17,7 @@ from .debug_viz import draw_quad, mask_overlay
 
 
 class ClassicWarpBackend(TryOnBackend):
-    def __init__(self, feather_px: int = 15, person_mask_threshold: float = 0.4,
+    def __init__(self, feather_px: int = 22, person_mask_threshold: float = 0.4,
                  garment_type: str = "auto", debug_dir: str | None = None,
                  flip_garment: bool = False, opacity: float = 1.0):
         """
@@ -91,26 +91,27 @@ class ClassicWarpBackend(TryOnBackend):
 
         warped_rgb = match_lighting(warped_rgb, warped[:, :, 3], person_bgr, combined_mask)
 
-        mask_u8 = (combined_mask * 255).astype(np.uint8)
-        ys, xs = np.where(mask_u8 > 10)
-        if len(xs) == 0:
+        if combined_mask.max() < 0.05:
             raise RuntimeError("Warped garment does not overlap the detected body region.")
 
-        try:
-            center = (int(xs.mean()), int(ys.mean()))
-            result = cv2.seamlessClone(warped_rgb, person_bgr, mask_u8, center, cv2.NORMAL_CLONE)
-        except cv2.error:
-            mask3 = combined_mask[:, :, None]
-            result = (warped_rgb.astype(np.float32) * mask3 +
-                      person_bgr.astype(np.float32) * (1 - mask3)).astype(np.uint8)
-
-        if self.opacity < 1.0:
-            # seamlessClone treats its mask as a hard region (any nonzero
-            # pixel is "inside"), so it can't take a graded weight itself --
-            # fade the whole cloned result back toward the original photo
-            # instead, weighted by where the garment actually landed.
-            fade = (combined_mask * self.opacity)[:, :, None]
-            result = (result.astype(np.float32) * fade +
-                      person_bgr.astype(np.float32) * (1 - fade)).astype(np.uint8)
+        # cv2.seamlessClone (Poisson/gradient-domain blending) was tried
+        # here first, since it's the standard tool for hiding a composite
+        # seam. It made results *worse*, not better: verified on a real
+        # photo, it consistently washed a vivid, high-contrast garment down
+        # to a flat, desaturated, near-transparent-looking blob -- with
+        # *both* a softly feathered mask and a cleanly thresholded binary
+        # mask, and in both NORMAL_CLONE and MIXED_CLONE modes. Its Poisson
+        # solve re-integrates the source using the destination's boundary
+        # values, and when that boundary sits over the very different-looking
+        # old garment (not skin), the correction needed to satisfy those
+        # boundary conditions collapses the new garment's own contrast.
+        # A plain feathered alpha blend -- using the same combined_mask,
+        # already Gaussian-blurred at its edges above -- kept the garment's
+        # true colors intact and looked visibly more realistic on every test
+        # photo, so it's the blend used here, with `opacity` folded directly
+        # into the same formula rather than a separate fade-after-clone step.
+        mask3 = (combined_mask * self.opacity)[:, :, None]
+        result = (warped_rgb.astype(np.float32) * mask3 +
+                  person_bgr.astype(np.float32) * (1 - mask3)).astype(np.uint8)
 
         return result

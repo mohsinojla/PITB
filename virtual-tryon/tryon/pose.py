@@ -34,10 +34,19 @@ class TorsoLandmarks:
         torso_h = np.linalg.norm(((lh + rh) / 2) - ((ls + rs) / 2))
         up = np.array([0, -1.0]) * torso_h * shoulder_lift
         down = np.array([0, 1.0]) * torso_h * hip_drop
-        top_left = ls + up
-        top_right = rs + up
-        bottom_left = lh + down
-        bottom_right = rh + down
+        # mediapipe's "left"/"right" name the *subject's own* anatomical
+        # side, not image left/right -- someone facing the camera has their
+        # left shoulder appear on the image's right side (like facing
+        # another person). Using the landmark names directly as image
+        # corners silently mirrors every garment left-right. Pick the
+        # actual image-left/right corner by x position instead of trusting
+        # the name (see garment.html's case study for how this was found).
+        img_left_top, img_right_top = (ls, rs) if ls[0] <= rs[0] else (rs, ls)
+        img_left_bottom, img_right_bottom = (lh, rh) if lh[0] <= rh[0] else (rh, lh)
+        top_left = img_left_top + up
+        top_right = img_right_top + up
+        bottom_left = img_left_bottom + down
+        bottom_right = img_right_bottom + down
         return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
 
 
@@ -56,10 +65,15 @@ class LegLandmarks:
         leg_h = np.linalg.norm(((la + ra) / 2) - ((lh + rh) / 2))
         up = np.array([0, -1.0]) * leg_h * waist_lift
         down = np.array([0, 1.0]) * leg_h * ankle_drop
-        top_left = lh + up
-        top_right = rh + up
-        bottom_left = la + down
-        bottom_right = ra + down
+        # Same fix as TorsoLandmarks.as_quad(): mediapipe's left/right are
+        # anatomical, not image-space, so pick the actual image-left/right
+        # corner by x position instead of trusting the landmark name.
+        img_left_top, img_right_top = (lh, rh) if lh[0] <= rh[0] else (rh, lh)
+        img_left_bottom, img_right_bottom = (la, ra) if la[0] <= ra[0] else (ra, la)
+        top_left = img_left_top + up
+        top_right = img_right_top + up
+        bottom_left = img_left_bottom + down
+        bottom_right = img_right_bottom + down
         return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
 
 

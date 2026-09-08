@@ -40,9 +40,9 @@ Person and garment photos are auto-oriented using their EXIF rotation tag before
 1. `mediapipe` Pose detects shoulder/hip landmarks (or hip/ankle landmarks for `--garment-type lower`) on the person to locate the target body region.
 2. `mediapipe` Selfie Segmentation gets a silhouette mask of the person.
 3. `rembg` removes the background from the garment photo.
-4. OpenCV computes a perspective warp from the garment's shape to the target landmarks and warps the garment onto the person.
-5. The warped garment's lighting/color is matched to the person's photo (LAB-space statistic transfer) so it doesn't keep its studio-shot look.
-6. The result is blended onto the person with feathering + Poisson (`cv2.seamlessClone`) blending.
+4. OpenCV computes a perspective warp from the garment's shape to the target landmarks and warps the garment onto the person. The target region is built from the actual image-left/right corner position, not mediapipe's `LEFT_`/`RIGHT_` landmark names — those name the subject's own anatomical side, which is mirrored relative to the image for anyone facing the camera; using the names directly used to mirror every garment (fixed — see [learning/pose.html](../learning/pose.html)).
+5. The warped garment's lighting/color is matched to the person's photo (LAB-space statistic transfer), at partial strength, so it picks up the scene's lighting without losing its own color identity (full-strength matching was tried first and crushed high-contrast garments to a muddy blob — see [learning/advanced_features.html](../learning/advanced_features.html)).
+6. The result is blended onto the person with a feathered alpha blend. (`cv2.seamlessClone`/Poisson blending was tried here first and consistently washed the garment's color out — see [learning/classic_backend.html](../learning/classic_backend.html)'s case study.)
 
 **Limitation:** this is a geometric warp, not a learned re-render — it stretches the garment image onto the body rather than regenerating fabric folds, shadows, and drape. It works reasonably for a quick "does this shape/color suit me" check, but it isn't fully photoreal.
 

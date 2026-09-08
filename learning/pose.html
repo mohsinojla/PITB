@@ -113,6 +113,7 @@ left_shoulder = pt(mp_pose.PoseLandmark.LEFT_SHOULDER)</pre>
     <ul>
       <li>Whenever you need a specific joint by name (shoulders/hips for clothing fit, wrists for gesture position, ankles for a jump-height app, etc.).</li>
     </ul>
+    <div class="warn"><strong>"Left"/"right" are the subject's own anatomical sides, not image left/right.</strong> Someone facing the camera has their left shoulder appear on the <em>image's right</em> side (the same reason your left hand is on someone else's right when you face them). This project originally built the torso/leg quad by assuming <code>LEFT_SHOULDER</code> = the image-left corner — for any front-facing photo (the overwhelmingly common case here) that silently mirrored the target region left-right, which in turn mirrored every garment onto the person. Confirmed on a real photo: <code>left_shoulder.x = 327</code>, <code>right_shoulder.x = 77</code>, on a 400px-wide image — the "left" landmark was on the right. Fixed in <code>TorsoLandmarks.as_quad()</code>/<code>LegLandmarks.as_quad()</code> (<span class="file-tag">tryon/pose.py</span>) by comparing actual <code>x</code> position to decide which point is the image-left corner, rather than trusting the landmark's name — see <a href="classic_backend.html">classic_backend.html</a>'s case study for how this was actually found (it looked like a "blend" bug at first, not a mirroring one).</div>
   </div>
 </details>
 

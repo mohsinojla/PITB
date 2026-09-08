@@ -110,32 +110,36 @@
   </div>
 </details>
 
-<details class="fn">
-  <summary><span class="arrow">▶</span><code>cv2.seamlessClone(src, dst, mask, center, flags)</code></summary>
+<details class="fn" open>
+  <summary><span class="arrow">▶</span>Case study — why this pipeline <em>doesn't</em> use <code>cv2.seamlessClone</code> anymore</summary>
   <div class="body">
-    <p>Poisson blending: instead of a plain alpha "cut and paste," it blends the <em>gradients</em> (rates of change) of the source region into the destination, so lighting/color continuity across the seam looks natural rather than pasted-on.</p>
-    <div class="section-label">Used in this project</div>
+    <p>Poisson/gradient-domain blending (<code>cv2.seamlessClone</code>) is the standard textbook answer for hiding a composite seam: instead of a plain alpha "cut and paste," it blends the source region's <em>gradients</em> into the destination so lighting/color continuity across the edge looks natural. It was this project's original blending method:</p>
     <pre>result = cv2.seamlessClone(warped_rgb, person_bgr, mask_u8, center, cv2.NORMAL_CLONE)</pre>
-    <div class="section-label">Key arguments</div>
+    <div class="section-label">What actually happened</div>
+    <p>On a real photo, results consistently came out looking like a <strong>faint, "translucent" ghost</strong> of the garment — the original shirt still clearly visible underneath — even though the garment was fully opaque and correctly positioned. It looked exactly like a transparency/alpha bug, and wasn't one.</p>
+    <div class="section-label">Ruling out the obvious suspects first</div>
     <ul>
-      <li><code>mask</code> — 8-bit single-channel, non-zero where the source should be pasted.</li>
-      <li><code>center</code> — pixel location <strong>in the destination image</strong> where the mask's center should land.</li>
-      <li><code>flags</code> — <code>cv2.NORMAL_CLONE</code> (preserve source texture) vs. <code>cv2.MIXED_CLONE</code> (blend using whichever of source/destination has stronger gradients — better when the pasted region has transparent/flat parts that should let the background's texture show through).</li>
+      <li>Checked the mask wasn't the problem: same washed-out result with the softly feathered mask <em>and</em> with a cleanly thresholded binary mask (no gradient values at all).</li>
+      <li>Checked the clone mode wasn't the problem: <code>cv2.NORMAL_CLONE</code> and <code>cv2.MIXED_CLONE</code> both produced it (<code>MIXED_CLONE</code> was actually worse — it discarded almost the entire garment).</li>
+      <li>Saved the garment image right before the clone call and confirmed it was still fully vivid, high-contrast, and correctly colored going in.</li>
     </ul>
-    <div class="section-label">When to reach for it</div>
+    <p>That isolated it to <code>seamlessClone</code> itself: its Poisson solve re-integrates the source patch using the <em>destination's</em> values at the mask boundary. When that boundary sits over something very different-looking from the new garment — here, literally the old shirt being replaced — satisfying those boundary conditions pulls the whole patch's contrast/saturation down toward the old, duller garment, badly enough to look like a see-through ghost rather than a subtle color grade.</p>
+    <div class="section-label">The fix</div>
+    <p>Dropped <code>seamlessClone</code> entirely in favor of a plain feathered alpha blend (below) — the same Gaussian-blurred <code>combined_mask</code> already computed for edge softness, used directly as a per-pixel blend weight. It kept the garment's real colors intact and looked visibly more realistic on every test photo.</p>
+    <div class="section-label">The general lesson</div>
     <ul>
-      <li>Compositing an object into a scene with different lighting — face swaps, object insertion, and here, blending a warped garment onto skin/background so the edges don't look like a sticker.</li>
+      <li>The "textbook better" algorithm for a task (Poisson blending is unambiguously more sophisticated than alpha blending) isn't automatically the better choice for a specific input — verify on the actual data, don't assume sophistication implies quality here.</li>
+      <li>A result that looks like a specific, familiar bug (transparency) can have a completely different root cause (contrast collapse) that only shows up once you check the very next value in the pipeline, not just "did this step run".</li>
     </ul>
-    <div class="warn">It can throw <code>cv2.error</code> if the mask is empty/degenerate — that's why this project wraps it in <code>try/except</code> and falls back to plain alpha blending.</div>
   </div>
 </details>
 
 <details class="fn">
-  <summary><span class="arrow">▶</span>Manual alpha blending (fallback): <code>src*mask + dst*(1-mask)</code></summary>
+  <summary><span class="arrow">▶</span>Alpha blending: <code>src*mask + dst*(1-mask)</code></summary>
   <div class="body">
-    <p>Not a single OpenCV call — the classic "over" compositing formula, computed directly with NumPy array arithmetic when <code>seamlessClone</code> isn't usable.</p>
+    <p>The classic "over" compositing formula, computed directly with NumPy array arithmetic — this is the pipeline's actual blend step (see the case study above for why, not <code>cv2.seamlessClone</code>).</p>
     <div class="section-label">Used in this project</div>
-    <pre>mask3 = combined_mask[:, :, None]   # add a channel dim so it broadcasts over B,G,R
+    <pre>mask3 = (combined_mask * self.opacity)[:, :, None]   # add a channel dim so it broadcasts over B,G,R
 result = (warped_rgb.astype(np.float32) * mask3 +
           person_bgr.astype(np.float32) * (1 - mask3)).astype(np.uint8)</pre>
     <div class="diagram">for every pixel p:
@@ -144,9 +148,10 @@ result = (warped_rgb.astype(np.float32) * mask3 +
               fully "warped" where     fully "original" where
               mask == 1                mask == 0
               (smooth mix in between, thanks to the Gaussian blur)</div>
+    <p><code>opacity</code> is folded directly into the same mask multiply here, rather than a separate fade-after-blend step — simpler than it needed to be back when <code>seamlessClone</code> (a hard-region operation, not a graded blend) was still in the loop; see <a href="advanced_features.html">advanced_features.html</a> for that history.</p>
     <div class="section-label">When to reach for it</div>
     <ul>
-      <li>Any straightforward compositing task where Poisson blending is overkill or unavailable — it's simpler and faster, at the cost of not correcting for lighting/color differences at the seam.</li>
+      <li>Any straightforward compositing task — simple, fast, predictable, and (per the case study above) not automatically worse-looking than gradient-domain blending.</li>
     </ul>
     <div class="tip">Cast to <code>float32</code> before the multiply — multiplying <code>uint8</code> arrays directly wraps around (overflows) instead of clamping, corrupting the result.</div>
   </div>

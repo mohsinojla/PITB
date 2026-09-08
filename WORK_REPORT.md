@@ -5,7 +5,7 @@
 **Organization:** Punjab Information Technology Board (PITB)
 **Project:** Virtual Try-On — a computer-vision CLI tool for trying garments on a photo before buying
 **Repository:** [virtual-tryon/](virtual-tryon/)
-**Reporting period:** August 28, 2026 – September 8, 2026 (5 commits)
+**Reporting period:** August 28, 2026 – September 8, 2026 (8 commits)
 
 ## Summary
 
@@ -30,6 +30,31 @@ upgrade path (`tryon/diffusion_backend.py`) rather than left unstated.
 | Sep 6, 2026 | `4704308` | Added LAB-space lighting/color matching so a warped garment doesn't look visibly "pasted on" (`tryon/lighting.py`); added lower-body support (pants/skirts fit to hip→ankle landmarks, not just shirts to shoulder→hip); added `--debug` mode to dump intermediate landmark/mask visualizations for diagnosing bad results (`tryon/debug_viz.py`); added multi-garment comparison grids so several garments can be checked against one photo in a single output image. |
 | Sep 7, 2026 | `31a47f9` | Fixed two real correctness bugs found through testing: (1) hip landmarks mediapipe reports for a photo where the hips are out of frame are low-confidence extrapolations, not real detections — the pipeline now falls back to a synthesized hip line from shoulder geometry instead of trusting them; (2) a coat hanger above a hanging garment was being picked up as part of the garment silhouette and thrown off the whole warp — added hanger stripping. |
 | Sep 8, 2026 | `54aa0f8` | Added `--flip-garment` (mirror a garment shot facing the wrong way), `--opacity` (adjustable blend strength, useful for a subtler preview or an alignment sanity check), and EXIF auto-orientation on image load (`tryon/io_utils.py`) so a sideways/upside-down phone photo doesn't silently break pose detection. All three features were run against the sample photos and verified: baseline vs. flipped output differ as expected; `--opacity 0/0.5/1` produce a measured, monotonic pixel-difference from the original photo; invalid `--opacity` values are rejected; the multi-garment comparison grid still works; and a synthetically EXIF-rotated copy of the sample photo was confirmed to round-trip back to the original orientation. |
+| Sep 8, 2026 | (later) | Documentation pass: added the internship work report ([WORK_REPORT.md](WORK_REPORT.md)), a repo-overview root README, and a full setup-from-scratch manual ([virtual-tryon/MANUAL.md](virtual-tryon/MANUAL.md)); refreshed the `learning/` docs that had fallen out of sync with the latest code. |
+| Sep 8, 2026 | (later) | **Realism fixes**, prompted by actually looking hard at output quality rather than just "does it run": found and fixed two significant correctness bugs plus a tuning issue that together were the real cause of poor-looking results (see "Realism fixes" below for the full story). |
+
+## Realism fixes (Sep 8, 2026)
+
+Asked to make results look more realistic. Generated an actual test output
+first rather than reasoning about the code in the abstract, and it looked
+badly broken — a faint, "see-through ghost" of the new garment over the old
+one. Debugged it properly (isolating each pipeline stage, not guessing) and
+found it wasn't one bug but three compounding issues:
+
+1. **Garments were being mirrored left-right, silently, since the pipeline was first built.** `TorsoLandmarks`/`LegLandmarks` assumed mediapipe's `LEFT_SHOULDER` landmark was the image's left corner. mediapipe actually names landmarks by the *subject's own anatomical side* — for anyone facing the camera (the normal case), their left shoulder appears on the image's *right* (confirmed with real numbers: `left_shoulder.x=327` vs `right_shoulder.x=77` on a 400px-wide photo). Fixed by picking the image-left/right corner by actual x-position, not the landmark's name (`tryon/pose.py`).
+2. **`cv2.seamlessClone` (Poisson blending) was crushing garment contrast.** It was the pipeline's blend method from the start, and looked like the standard "better than plain alpha blending" choice. In practice it consistently washed a vivid, high-contrast garment down to a flat, muddy, translucent-looking result — confirmed by testing it with both a soft and a hard-edged mask, and in both its blend modes, all with the same result. Root cause: its Poisson solve re-integrates the source patch to match the *destination's* boundary values, and that boundary is usually the old garment being replaced, not skin — pulling contrast toward the old, duller garment. Replaced with a plain feathered alpha blend, which looked visibly better on every test photo (`tryon/classic_backend.py`).
+3. **The lighting-match correction was too strong.** Running the LAB-space color transfer at its original full strength compounded the same problem — matching the new garment's color statistics *exactly* to the old garment's. Now blends in only a fraction of the correction (more for brightness, less for color) and clamps how much contrast it's allowed to rescale, so the garment keeps its own identity while still picking up a plausible lighting cue (`tryon/lighting.py`).
+
+Also increased the blend-mask feather radius for softer, less "sticker-cutout"
+edges at the collar/hem.
+
+Verified by re-running the full CLI (default blend, `--flip-garment`,
+`--opacity`, `--debug`, multi-garment comparison grid) against 4 different
+person/garment sample combinations and visually confirming each fix — not
+just that the code ran without an error. Documented all three as case studies
+in `learning/` (`pose.html`, `classic_backend.html`, `advanced_features.html`)
+so the reasoning survives past this session, matching how earlier bugs in
+this project were written up.
 
 ## How the tool works
 
@@ -45,10 +70,11 @@ upgrade path (`tryon/diffusion_backend.py`) rather than left unstated.
    homography from the garment's shape to the detected body landmarks and
    warps the garment image onto the person.
 5. **Lighting match** (`tryon/lighting.py`) — a LAB-space statistic transfer
-   shifts the garment's studio lighting to match the person photo's lighting.
-6. **Blend** (`tryon/classic_backend.py`) — feathered, Poisson
-   (`cv2.seamlessClone`) blending composites the result, with an optional
-   opacity fade for a softer overlay.
+   shifts the garment's studio lighting toward the person photo's lighting,
+   at partial strength so the garment keeps its own color identity.
+6. **Blend** (`tryon/classic_backend.py`) — a feathered alpha blend
+   composites the result, with `opacity` folded directly into the same
+   blend weight for a softer overlay when wanted.
 
 See [virtual-tryon/README.md](virtual-tryon/README.md) for full CLI usage and
 [learning/index.html](learning/index.html) for a walkthrough of the underlying

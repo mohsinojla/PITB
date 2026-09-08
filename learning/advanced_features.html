@@ -76,6 +76,7 @@ for channel in range(3):                       # L (lightness), A, B (color)
       <li>Compositing any two images shot under different lighting — object insertion, "photobashing," harmonizing a cut-out sticker into a scene, day/night image conversion.</li>
     </ul>
     <div class="tip">This is the same family of technique as "Reinhard color transfer" (Reinhard et al., 2001) — a classic, cheap alternative to training a neural style-transfer model when you just need statistics to roughly line up.</div>
+    <div class="warn"><strong>Case study: full-strength correction made results worse, not better.</strong> The version above shows the technique, but running it at 100% strength (its original, un-tuned form) actively wrecked results: it rescales the garment's own color spread to <em>exactly</em> match the destination region's spread, and that destination region is usually the person's <em>original</em> clothing (not skin), since the garment lands right where a shirt already was. Matching to a lower-contrast old garment crushed a vivid, high-contrast new garment down to a flat, muddy, near-monochrome blob — verified on a real photo (a vivid blue/orange jersey came out looking like a desaturated, translucent "ghost" over the old shirt, even though it was fully opaque; contrast had been crushed, not transparency). Fixed by blending only a fraction of the correction back in (<code>l_strength=0.55</code> for lightness, a weaker <code>ab_strength=0.2</code> for color — brightness should shift toward the scene's lighting, but fully matching color statistics pulls the garment toward whatever was already there) and clamping how much the contrast/std can be rescaled (<code>std_ratio_clip</code>), so the garment keeps its own identity while still picking up a plausible lighting nudge. The general lesson: a statistically "correct" full transfer isn't automatically the visually correct amount — check the actual output at full strength before shipping it as the default, and consider a destination that's the same <em>kind</em> of surface (skin, not clothing) when one's available.</div>
   </div>
 </details>
 
@@ -262,25 +263,22 @@ src_quad = garment_quad(garment_bgra)          # computed *after* flipping</pre>
 </details>
 
 <details class="fn">
-  <summary><span class="arrow">▶</span>Opacity fade — why it has to happen <em>after</em> <code>seamlessClone</code>, not inside it <span class="file-tag">tryon/classic_backend.py</span></summary>
+  <summary><span class="arrow">▶</span>Opacity fade — a lesson that outlived the code it was about <span class="file-tag">tryon/classic_backend.py</span></summary>
   <div class="body">
     <p><code>--opacity</code> lets the composite be faded back toward the original, untouched photo — useful for a subtler "does this roughly work" preview, or to sanity-check garment alignment before committing to a full-strength blend.</p>
-    <div class="section-label">The naive approach doesn't work</div>
-    <p>The obvious idea — multiply <code>combined_mask</code> by <code>opacity</code> and feed that weaker mask straight into <code>cv2.seamlessClone</code> — doesn't do what it sounds like. <code>seamlessClone</code> treats its mask as a <em>hard region</em> (any nonzero pixel counts as "inside the region to clone"), not a per-pixel blend weight; it isn't designed for partial-strength compositing at all.</p>
-    <div class="section-label">The actual fix — fade the finished result</div>
-    <pre>result = cv2.seamlessClone(warped_rgb, person_bgr, mask_u8, center, cv2.NORMAL_CLONE)
-
-if self.opacity &lt; 1.0:
-    fade = (combined_mask * self.opacity)[:, :, None]
-    result = (result.astype(np.float32) * fade +
-              person_bgr.astype(np.float32) * (1 - fade)).astype(np.uint8)</pre>
-    <p>Run the full-strength seamless clone first, exactly as before, then linearly blend that finished result back toward the original person photo — weighted by <code>combined_mask</code> (so the fade only affects the region the garment actually landed on, not the whole photo) scaled by <code>opacity</code>.</p>
+    <div class="section-label">The naive approach doesn't work — historically, with cv2.seamlessClone</div>
+    <p>At the time this flag was added, the pipeline blended with <code>cv2.seamlessClone</code>. The obvious idea — multiply <code>combined_mask</code> by <code>opacity</code> and feed that weaker mask straight into <code>seamlessClone</code> — didn't do what it sounds like: <code>seamlessClone</code> treats its mask as a <em>hard region</em> (any nonzero pixel counts as "inside the region to clone"), not a per-pixel blend weight, so a "10% opacity" mask got treated identically to a 100% one. The fix at the time was to run the full-strength seamless clone first, then fade <em>that finished result</em> back toward the original photo as a separate step.</p>
+    <div class="section-label">Simpler now, for an unrelated reason</div>
+    <p><code>seamlessClone</code> was later dropped entirely (see <a href="classic_backend.html">classic_backend.html</a>'s case study — it was crushing garment contrast, not related to opacity at all). Its replacement, plain alpha blending, <em>is</em> a genuine per-pixel blend weight, so opacity no longer needs a separate post-blend fade — it's folded directly into the same mask multiply:</p>
+    <pre>mask3 = (combined_mask * self.opacity)[:, :, None]
+result = (warped_rgb.astype(np.float32) * mask3 +
+          person_bgr.astype(np.float32) * (1 - mask3)).astype(np.uint8)</pre>
     <div class="section-label">Verified, not assumed</div>
-    <p>Checked with an actual pixel-difference measurement across three runs of the same photo/garment pair: <code>--opacity 0</code> came back nearly identical to the original photo (mean diff ≈0.2/255, just JPEG re-encoding noise), <code>--opacity 0.5</code> landed roughly halfway between the original and the full-strength result, and <code>--opacity 1</code> (the default) matched the pre-existing full-strength output — confirming the fade is linear and correctly anchored, not just "looks about right."</p>
+    <p>Checked with an actual pixel-difference measurement across three runs of the same photo/garment pair: <code>--opacity 0</code> came back nearly identical to the original photo, <code>--opacity 0.5</code> landed roughly halfway between the original and the full-strength result, and <code>--opacity 1</code> (the default) matched the full-strength output — confirming the fade is linear and correctly anchored, not just "looks about right." Re-verified after the blend method changed underneath it.</p>
     <div class="section-label">The general lesson</div>
     <ul>
-      <li>A function's mask/weight parameter isn't automatically a graded blend weight just because it accepts float/graded input — check what the function actually does with intermediate values (here, <code>seamlessClone</code> silently treats "10% opacity" the same as "100%"), rather than assuming.</li>
-      <li>When a built-in can't do what you need directly, it's often simpler to run it as designed and post-process the result, rather than fighting its API to make it do something it wasn't built for.</li>
+      <li>A function's mask/weight parameter isn't automatically a graded blend weight just because it accepts float/graded input — check what the function actually does with intermediate values, rather than assuming.</li>
+      <li>When the layer underneath a feature changes, re-check whether the feature's own workaround is still needed — carrying forward a fix for a problem that no longer exists just adds unnecessary complexity.</li>
     </ul>
   </div>
 </details>
