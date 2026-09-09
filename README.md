@@ -14,6 +14,13 @@ built, and how it was tested).
   [virtual-tryon/README.md](virtual-tryon/README.md) for install/usage, or
   [virtual-tryon/MANUAL.md](virtual-tryon/MANUAL.md) for a full step-by-step
   setup guide from a fresh machine.
+- **[gputryon/](gputryon/)** — a second, separate try-on tool using a real
+  learned diffusion model ([CatVTON](https://github.com/Zheng-Chong/CatVTON))
+  on a local NVIDIA GPU instead of a geometric warp — genuinely realistic
+  fabric drape/folds/shadows, at the cost of needing a GPU and much longer
+  per-run time. `virtual-tryon/` is untouched; see
+  [gputryon/README.md](gputryon/README.md) for setup, hardware fit, and
+  how the two compare.
 - **[learning/](learning/index.html)** — write-ups documenting the OpenCV /
   mediapipe / NumPy concepts used while building the tool, kept as a personal
   reference and to show the reasoning behind implementation choices.

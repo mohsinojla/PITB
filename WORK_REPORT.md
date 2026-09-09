@@ -3,9 +3,9 @@
 **Intern:** Mohsin Raza Aujla
 **Email:** mohsinrazaojla32@gmail.com
 **Organization:** Punjab Information Technology Board (PITB)
-**Project:** Virtual Try-On — a computer-vision CLI tool for trying garments on a photo before buying
-**Repository:** [virtual-tryon/](virtual-tryon/)
-**Reporting period:** August 28, 2026 – September 8, 2026 (9 commits)
+**Project:** Virtual Try-On — CLI tools for trying garments on a photo before buying
+**Repository:** [virtual-tryon/](virtual-tryon/) (classic CV) and [gputryon/](gputryon/) (GPU diffusion model)
+**Reporting period:** August 28, 2026 – September 9, 2026
 
 ## Summary
 
@@ -32,6 +32,7 @@ upgrade path (`tryon/diffusion_backend.py`) rather than left unstated.
 | Sep 8, 2026 | `54aa0f8` | Added `--flip-garment` (mirror a garment shot facing the wrong way), `--opacity` (adjustable blend strength, useful for a subtler preview or an alignment sanity check), and EXIF auto-orientation on image load (`tryon/io_utils.py`) so a sideways/upside-down phone photo doesn't silently break pose detection. All three features were run against the sample photos and verified: baseline vs. flipped output differ as expected; `--opacity 0/0.5/1` produce a measured, monotonic pixel-difference from the original photo; invalid `--opacity` values are rejected; the multi-garment comparison grid still works; and a synthetically EXIF-rotated copy of the sample photo was confirmed to round-trip back to the original orientation. |
 | Sep 8, 2026 | (later) | Documentation pass: added the internship work report ([WORK_REPORT.md](WORK_REPORT.md)), a repo-overview root README, and a full setup-from-scratch manual ([virtual-tryon/MANUAL.md](virtual-tryon/MANUAL.md)); refreshed the `learning/` docs that had fallen out of sync with the latest code. |
 | Sep 8, 2026 | (later) | **Realism fixes**, prompted by actually looking hard at output quality rather than just "does it run": found and fixed two significant correctness bugs plus a tuning issue that together were the real cause of poor-looking results (see "Realism fixes" below for the full story). |
+| Sep 9, 2026 | (new folder) | **Added a second, GPU-based try-on tool** ([gputryon/](gputryon/)) using a real diffusion model (CatVTON) instead of a geometric warp, once it became clear the classic pipeline's ceiling is "convincing shape/color check," not photoreal. `virtual-tryon/` was left untouched. See "GPU diffusion try-on" below. |
 
 ## Realism fixes (Sep 8, 2026)
 
@@ -56,7 +57,49 @@ in `learning/` (`pose.html`, `classic_backend.html`, `advanced_features.html`)
 so the reasoning survives past this session, matching how earlier bugs in
 this project were written up.
 
-## How the tool works
+## GPU diffusion try-on (Sep 9, 2026)
+
+The classic pipeline's realism ceiling is inherent to a geometric warp — it
+stretches a flat photo onto a rectangle, so it can never truly show fabric
+folds, shadows, or drape. Asked to make results actually realistic, and
+this machine turned out to have a usable (if modest) NVIDIA GPU (Quadro
+T1000, 4GB VRAM), so built a second, independent tool
+([gputryon/](gputryon/)) around [CatVTON](https://github.com/Zheng-Chong/CatVTON),
+a lightweight diffusion-based try-on model, rather than trying to push the
+classic warp further.
+
+Design choices, made for this specific hardware rather than assumed:
+
+- Runs at 512x384 (CatVTON's `vitonhd` checkpoint) instead of the reference
+  1024x768 config, plus fp16→**bf16** weights, VAE slicing/tiling, and no
+  safety-checker model — to fit CatVTON's own stated ~8GB minimum into 4GB.
+- Skipped CatVTON's own SCHP+DensePose auto-mask models (extra heavy
+  dependencies, with reported Windows setup issues) — instead reused this
+  project's own already-working mediapipe pose detection to build the
+  inpainting mask, including the same image-left/right fix from the
+  realism-fixes session above.
+- Vendored (not `git clone`d) just the ~4 source files of CatVTON actually
+  needed, trimmed and commented, with clear attribution and its
+  CC BY-NC-SA 4.0 (non-commercial) license called out in `gputryon/README.md`.
+
+Found and fixed a real bug during testing, not just "got it running":
+**`--dtype fp16` produced a solid black output image** on this GPU — a
+genuine NaN/overflow bug in the model at fp16 precision, confirmed with a
+debug script showing NaN values appearing mid-pipeline, not a fluke. Fixed
+by switching the default to `bf16` (CatVTON's own recommended precision),
+which has the same memory cost as fp16 but avoids the overflow. Documented
+as a case study in `gputryon/README.md`'s "Is this a fit for your machine?"
+table, with the real measured numbers, not estimates: ~12 minutes per
+try-on at the default 30 steps (this GPU has no native bf16 acceleration),
+~8 minutes at 20 steps.
+
+Also found, and documented rather than hid, a real limitation of the
+approach itself: a test garment with printed text came out with the
+fabric/drape looking convincing but the text illegible — diffusion models
+are generally poor at rendering legible text, not a bug specific to this
+setup.
+
+## How the classic tool (virtual-tryon/) works
 
 1. **Pose detection** (`tryon/pose.py`) — mediapipe Pose locates shoulder/hip
    (or hip/ankle) landmarks to find where the garment should sit.

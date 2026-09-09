@@ -5,6 +5,11 @@ no prior setup assumed. Windows commands are shown first (this project was
 built and tested on Windows); macOS/Linux equivalents are noted where they
 differ.
 
+> Looking for genuinely photoreal results (fabric folds, shadows, drape) and
+> have an NVIDIA GPU? See [../gputryon/](../gputryon/) instead — a separate
+> tool using a real diffusion model. This manual covers the classic,
+> CPU-only, instant-but-geometric-warp tool.
+
 ## 1. Prerequisites
 
 | Requirement | Why | Check |

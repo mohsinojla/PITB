@@ -1,0 +1,17 @@
+# torch is NOT listed here -- install it first, separately, with the CUDA
+# build matching your GPU driver (see README.md's Install section). A plain
+# `pip install torch` from PyPI gives you a CPU-only build that silently
+# won't use your GPU at all.
+diffusers>=0.27
+accelerate>=0.30
+huggingface_hub>=0.23
+safetensors>=0.4
+opencv-python>=4.9.0
+# Pinned to match ../virtual-tryon/requirements.txt: mediapipe 1.0+ dropped
+# the legacy `solutions` API (Pose, SelfieSegmentation) mask.py uses here,
+# and newer protobuf breaks an API mediapipe 0.10.x's generated code needs.
+mediapipe==0.10.14
+protobuf==4.25.3
+numpy>=1.24
+Pillow>=10.0
+tqdm>=4.65
