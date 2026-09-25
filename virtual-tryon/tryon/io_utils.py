@@ -31,3 +31,26 @@ def imread_oriented(path) -> np.ndarray | None:
     if arr.shape[2] == 4:
         return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
     return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def list_images(directory) -> list:
+    """Image files directly inside `directory`, sorted by name."""
+    from pathlib import Path
+    return sorted(p for p in Path(directory).iterdir()
+                  if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS)
+
+
+def limit_size(img: np.ndarray, max_side: int) -> np.ndarray:
+    """Downscale so the longest side is at most `max_side` px (never upscales).
+    Phone photos are often 4000+ px; pose/segmentation/blending cost scales
+    with pixel count but the models work at a fixed low internal resolution,
+    so the extra pixels only cost time and memory."""
+    h, w = img.shape[:2]
+    longest = max(h, w)
+    if max_side <= 0 or longest <= max_side:
+        return img
+    scale = max_side / longest
+    return cv2.resize(img, (int(round(w * scale)), int(round(h * scale))), interpolation=cv2.INTER_AREA)

@@ -111,6 +111,8 @@ def detect_torso(person_bgr: np.ndarray) -> TorsoLandmarks:
     # badly skewed torso quad. Synthesize a plausible hip line instead,
     # using the shoulder line and a typical body proportion.
     if left_hip_vis < VISIBILITY_THRESHOLD or right_hip_vis < VISIBILITY_THRESHOLD:
+        print(f"[warn] hips not clearly visible (confidence {left_hip_vis:.2f}/{right_hip_vis:.2f}); "
+              "estimating torso length from shoulders. A photo showing the waist fits better.")
         shoulder_vec = right_shoulder - left_shoulder
         shoulder_width = np.linalg.norm(shoulder_vec)
         shoulder_dir = shoulder_vec / (shoulder_width + 1e-6)

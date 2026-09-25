@@ -133,6 +133,40 @@ print(output_path.resolve())                             # full absolute path, f
   </div>
 </details>
 
+<details class="fn">
+  <summary><span class="arrow">▶</span><code>limit_size()</code> — <code>cv2.resize</code> with <code>INTER_AREA</code> <span class="file-tag">tryon/io_utils.py</span></summary>
+  <div class="body">
+    <p>Downscales an image so its longest side is at most <code>--max-size</code> pixels (default 1600), preserving aspect ratio, and never upscales.</p>
+    <div class="section-label">Used in this project</div>
+    <pre>scale = max_side / max(h, w)
+cv2.resize(img, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)</pre>
+    <div class="section-label">Why</div>
+    <ul>
+      <li>Pose and segmentation models run at a fixed small internal resolution, so a 4000px phone photo costs far more time and memory without being detected any better.</li>
+      <li><code>INTER_AREA</code> is the right interpolation for <em>shrinking</em> (it averages source pixels, avoiding aliasing); <code>INTER_LINEAR</code>/<code>INTER_CUBIC</code> are better for enlarging.</li>
+    </ul>
+    <div class="tip">Tested by shrinking a 2000×1600 photo: the aspect ratio stayed 0.8, images already under the limit were returned untouched, and <code>0</code> disabled it.</div>
+  </div>
+</details>
+
+<details class="fn">
+  <summary><span class="arrow">▶</span>Batch robustness: <code>--cloth-dir</code>, unique labels, skip-on-failure <span class="file-tag">main.py</span></summary>
+  <div class="body">
+    <p><code>list_images()</code> collects image files from a folder (sorted, by extension) so a whole wardrobe can be compared in one run — useful on Windows where the shell doesn't expand <code>*.jpg</code>.</p>
+    <pre>label = cloth_path.stem
+n = 2
+while label in used_labels:          # two files named shirt.jpg from different folders
+    label = f"{cloth_path.stem}_{n}"  # would otherwise overwrite each other's output
+    n += 1
+...
+try:
+    result = backend.run(person_bgr, cloth_bgr)
+except RuntimeError as exc:          # one unfittable garment shouldn't discard the rest
+    failures.append((cloth_path.name, str(exc)))</pre>
+    <div class="tip">The duplicate-name overwrite was a real bug spotted while testing the comparison grid; it's now covered by a test that feeds the same filename twice.</div>
+  </div>
+</details>
+
 </main>
 <footer><a href="classic_backend.html">← Warp &amp; Blend Engine</a> &nbsp;·&nbsp; <a href="advanced_features.html">Advanced Features →</a></footer>
 

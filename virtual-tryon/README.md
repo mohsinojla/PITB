@@ -32,6 +32,10 @@ python main.py --person person.jpg --cloth shirt1.jpg shirt2.jpg pants.jpg --out
 - `--debug`: saves the detected landmarks, garment cutout, and blend mask next to the output, for diagnosing a bad result.
 - `--flip-garment`: horizontally mirrors the garment before fitting it. Useful when a product photo faces the opposite way from the person photo (e.g. the garment is shot facing right but the person faces left).
 - `--opacity`: blend strength of the garment over the person, from `0` (invisible, original photo) to `1` (fully opaque, default). Handy for a subtler preview or to sanity-check how well the garment is aligned before committing to a full-strength blend.
+- `--cloth-dir FOLDER`: try on every image in a folder at once (Windows `cmd` doesn't expand `*.jpg`). Can be combined with `--cloth`. Produces the same comparison grid.
+- `--max-size N`: downscale photos whose longest side exceeds `N` px (default `1600`, `0` disables). Large phone photos otherwise just run slower with no quality benefit.
+
+In multi-garment runs, a garment that can't be read or fitted is skipped and listed at the end instead of aborting the batch, and garments sharing a filename get unique output names (`shirt`, `shirt_2`). If the person's hips aren't visible, a warning is printed and the torso length is estimated from the shoulders.
 
 Person and garment photos are auto-oriented using their EXIF rotation tag before processing, so a photo taken sideways/upside-down on a phone doesn't silently break pose or garment detection.
 

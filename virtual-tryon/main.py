@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 
 from tryon.classic_backend import ClassicWarpBackend
-from tryon.io_utils import imread_oriented
+from tryon.io_utils import imread_oriented, limit_size, list_images
 
 
 def build_backend(name: str, garment_type: str, debug_dir, flip_garment: bool, opacity: float):
@@ -57,8 +57,14 @@ def make_comparison_grid(person_bgr: np.ndarray, labeled_results: list[tuple[str
 def main():
     parser = argparse.ArgumentParser(description="Try clothes on a person photo before buying.")
     parser.add_argument("--person", required=True, help="Path to the photo of the person.")
-    parser.add_argument("--cloth", required=True, nargs="+",
+    parser.add_argument("--cloth", nargs="+", default=[],
                          help="Path to one or more garment photos. Multiple paths produce a comparison grid.")
+    parser.add_argument("--cloth-dir",
+                         help="Folder of garment photos to try on all at once (handy on Windows, whose "
+                              "shell doesn't expand *.jpg). Combined with any --cloth paths.")
+    parser.add_argument("--max-size", type=int, default=1600,
+                         help="Downscale photos whose longest side exceeds this many pixels "
+                              "(default 1600; 0 disables). Big phone photos otherwise just run slower.")
     parser.add_argument("--output", default="output/result.jpg", help="Where to save the result.")
     parser.add_argument("--backend", choices=["classic", "diffusion"], default="classic",
                          help="Try-on engine to use (see tryon/diffusion_backend.py for the upgrade path).")
@@ -80,6 +86,15 @@ def main():
 
     person_path = Path(args.person)
     cloth_paths = [Path(p) for p in args.cloth]
+    if args.cloth_dir:
+        cloth_dir = Path(args.cloth_dir)
+        if not cloth_dir.is_dir():
+            print(f"Error: --cloth-dir is not a folder: {cloth_dir}", file=sys.stderr)
+            sys.exit(1)
+        cloth_paths += [p for p in list_images(cloth_dir) if p not in cloth_paths]
+    if not cloth_paths:
+        print("Error: give at least one garment via --cloth or --cloth-dir.", file=sys.stderr)
+        sys.exit(1)
     for p in [person_path] + cloth_paths:
         if not p.exists():
             print(f"Error: file not found: {p}", file=sys.stderr)
@@ -90,24 +105,50 @@ def main():
         print("Error: could not read the person image (unsupported format?).", file=sys.stderr)
         sys.exit(1)
 
+    person_bgr = limit_size(person_bgr, args.max_size)
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     debug_dir = output_path.parent / f"{output_path.stem}_debug" if args.debug else None
 
     results = []
+    failures = []
+    used_labels = set()
     for cloth_path in cloth_paths:
         cloth_bgr = imread_oriented(str(cloth_path))
         if cloth_bgr is None:
-            print(f"Error: could not read garment image: {cloth_path}", file=sys.stderr)
-            sys.exit(1)
+            failures.append((cloth_path.name, "could not read image"))
+            print(f"Skipping {cloth_path.name}: could not read image", file=sys.stderr)
+            continue
+        cloth_bgr = limit_size(cloth_bgr, args.max_size)
 
-        this_debug_dir = (debug_dir / cloth_path.stem) if debug_dir else None
+        # Two garments can share a filename (different folders), which would
+        # make their outputs overwrite each other -- keep labels unique.
+        label = cloth_path.stem
+        n = 2
+        while label in used_labels:
+            label = f"{cloth_path.stem}_{n}"
+            n += 1
+        used_labels.add(label)
+
+        this_debug_dir = (debug_dir / label) if debug_dir else None
         backend = build_backend(args.backend, args.garment_type, this_debug_dir,
                                  args.flip_garment, args.opacity)
 
         print(f"Trying on {cloth_path.name}...")
-        result = backend.run(person_bgr, cloth_bgr)
-        results.append((cloth_path.stem, result))
+        try:
+            result = backend.run(person_bgr, cloth_bgr)
+        except RuntimeError as exc:
+            # In a batch, one garment that can't be fitted shouldn't throw
+            # away the results of all the others.
+            failures.append((cloth_path.name, str(exc)))
+            print(f"Skipping {cloth_path.name}: {exc}", file=sys.stderr)
+            continue
+        results.append((label, result))
+
+    if not results:
+        print("Error: no garment could be tried on.", file=sys.stderr)
+        sys.exit(1)
 
     if len(results) == 1:
         cv2.imwrite(str(output_path), results[0][1])
@@ -122,6 +163,11 @@ def main():
         grid_path = output_path.parent / f"{output_path.stem}_comparison{output_path.suffix}"
         cv2.imwrite(str(grid_path), grid)
         print(f"Saved comparison grid to {grid_path.resolve()}")
+
+    if failures:
+        print(f"\n{len(failures)} garment(s) skipped:")
+        for name, reason in failures:
+            print(f"  - {name}: {reason}")
 
 
 if __name__ == "__main__":
