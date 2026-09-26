@@ -7,5 +7,7 @@ mediapipe==0.10.14
 protobuf==4.25.3
 numpy>=1.24
 Pillow>=10.0
-rembg>=2.0.57
+# Runs the U2-Net garment cutout model directly (see tryon/segmentation.py).
+# rembg is deliberately NOT used: its numba/llvmlite chain is blocked by
+# Windows Application Control on some machines.
 onnxruntime>=1.17

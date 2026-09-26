@@ -61,7 +61,7 @@ below assumes it stays active — if you open a new terminal, re-run the
 pip install -r requirements.txt
 ```
 
-This installs OpenCV, mediapipe, rembg (background removal), onnxruntime,
+This installs OpenCV, mediapipe, onnxruntime (garment cutout),
 NumPy, and Pillow. It typically takes a few minutes on a fresh install.
 
 `requirements.txt` deliberately pins two versions:

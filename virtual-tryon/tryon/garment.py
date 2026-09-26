@@ -2,40 +2,37 @@
 import cv2
 import numpy as np
 
-
-_REMBG_SESSION = None
+from .segmentation import cutout
 
 
 def remove_background(garment_bgr: np.ndarray) -> np.ndarray:
-    """Isolate the garment on a transparent background using rembg.
+    """Isolate the garment on a transparent background (BGRA).
 
-    Uses the "u2netp" model (~4.7MB) instead of rembg's newer ~1GB default
-    (bria-rmbg) -- much more likely to actually finish downloading on a
-    slow/unstable connection, at a small cost in cutout quality.
-
-    Falls back to returning the image fully opaque if rembg/onnxruntime
-    is not available or the model can't be fetched, so the pipeline still
-    runs (with a plain background garment photo you'll get worse blending
-    quality).
+    Uses tryon.segmentation: U2-Net via onnxruntime, with a GrabCut fallback
+    if the model can't be loaded. This deliberately does not use the rembg
+    package -- see segmentation.py for why (its numba/llvmlite dependency is
+    blocked by Windows Application Control on some machines).
     """
-    global _REMBG_SESSION
-    try:
-        from rembg import remove, new_session
-        if _REMBG_SESSION is None:
-            _REMBG_SESSION = new_session("u2netp")
-        rgba = remove(cv2.cvtColor(garment_bgr, cv2.COLOR_BGR2RGBA), session=_REMBG_SESSION)
-        return cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)
-    except Exception as exc:  # pragma: no cover - environment dependent
-        print(f"[warn] background removal unavailable ({exc}); using original image as opaque.")
-        h, w = garment_bgr.shape[:2]
-        alpha = np.full((h, w, 1), 255, dtype=np.uint8)
-        return np.concatenate([garment_bgr, alpha], axis=2)
+    return cutout(garment_bgr)
+
+
+def _has_hanger(alpha: np.ndarray, y_min: int, y_max: int, bbox_width: int,
+                probe_frac: float = 0.03, thin_frac: float = 0.25) -> bool:
+    """A hanger hook is a thin stalk sticking up from the garment, so just
+    below the very top of the mask the silhouette is only a few pixels wide.
+    A real garment's top edge (shoulder line, neckline, collar) spans a
+    large share of the garment's width there. Stripping unconditionally
+    chopped the V-neck off a jersey that had no hanger at all."""
+    row = min(alpha.shape[0] - 1, y_min + max(2, int((y_max - y_min) * probe_frac)))
+    cols = np.where(alpha[row] > 10)[0]
+    width = 0 if len(cols) == 0 else cols.max() - cols.min() + 1
+    return width < thin_frac * bbox_width
 
 
 def strip_hanger(garment_bgra: np.ndarray, top_frac: float = 0.16) -> np.ndarray:
     """Zeroes out the top slice of the alpha mask to discard a coat hanger.
 
-    Background removal (rembg) isolates the whole foreground object, and a
+    Background removal (U2-Net) isolates the whole foreground object, and a
     hanger hook/bar above the collar is just as much "foreground" as the
     garment is -- no general-purpose segmentation model distinguishes
     "clothing" from "the thing it's hanging on". A hanger's hook is only a
@@ -45,7 +42,7 @@ def strip_hanger(garment_bgra: np.ndarray, top_frac: float = 0.16) -> np.ndarray
     was picked up as the "shoulder line" and produced a badly warped
     result with the hanger rendered on the person's chest).
 
-    This unconditionally discards the top `top_frac` of the garment's own
+    When a hanger hook is detected (see _has_hanger) this discards the top `top_frac` of the garment's own
     bounding-box height. It's a blunt heuristic -- for a photo with no
     hanger (flat lay, worn on a person/mannequin) it trims a bit of real
     garment/collar area for no benefit -- but product photos of hanging
@@ -54,11 +51,13 @@ def strip_hanger(garment_bgra: np.ndarray, top_frac: float = 0.16) -> np.ndarray
     shoulders.
     """
     alpha = garment_bgra[:, :, 3]
-    ys, _ = np.where(alpha > 10)
+    ys, xs = np.where(alpha > 10)
     if len(ys) == 0:
         return garment_bgra
 
     y_min, y_max = ys.min(), ys.max()
+    if not _has_hanger(alpha, y_min, y_max, xs.max() - xs.min() + 1):
+        return garment_bgra
     cutoff = int(y_min + (y_max - y_min) * top_frac)
 
     result = garment_bgra.copy()

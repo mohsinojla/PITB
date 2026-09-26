@@ -29,7 +29,8 @@ import numpy as np
 def match_lighting(garment_bgr: np.ndarray, garment_alpha: np.ndarray,
                     person_bgr: np.ndarray, person_region_mask: np.ndarray,
                     l_strength: float = 0.55, ab_strength: float = 0.2,
-                    std_ratio_clip: tuple[float, float] = (0.7, 1.4)) -> np.ndarray:
+                    std_ratio_clip: tuple[float, float] = (0.85, 1.15),
+                    max_mean_shift: tuple[float, float, float] = (14.0, 6.0, 6.0)) -> np.ndarray:
     """Adjust garment_bgr's tone to match the lighting of person_bgr,
     without destroying the garment's own identity.
 
@@ -53,6 +54,12 @@ def match_lighting(garment_bgr: np.ndarray, garment_alpha: np.ndarray,
         destination region with unusually low or high contrast/std (a flat
         skin patch, a high-contrast old shirt) can blow the correction up
         or crush it well past anything that still looks like fabric.
+    max_mean_shift: cap (in LAB units, per L/A/B) on how far the garment's
+        average may move toward the destination. Matching the mean outright
+        is what turned a black tee grey: the old shirt it lands on was
+        bright, so "match its brightness" meant "stop being black". The cap
+        still lets real lighting differences through (a shaded vs sunlit
+        photo is a shift of ~10-20 L) but not a change of garment colour.
     """
     src_mask = garment_alpha > 10 if garment_alpha.dtype != np.float32 else garment_alpha > 0.1
     dst_mask = person_region_mask > 0.1
@@ -73,7 +80,8 @@ def match_lighting(garment_bgr: np.ndarray, garment_alpha: np.ndarray,
         std_ratio = np.clip(dst_std / src_std, *std_ratio_clip)
 
         channel_data = src_lab[:, :, channel]
-        full_correction = (channel_data - src_mean) * std_ratio + dst_mean
+        mean_shift = np.clip(dst_mean - src_mean, -max_mean_shift[channel], max_mean_shift[channel])
+        full_correction = (channel_data - src_mean) * std_ratio + src_mean + mean_shift
         # Blend only `strength` of the way from the original toward the
         # fully-corrected version, instead of applying it outright.
         result_lab[:, :, channel] = channel_data + strengths[channel] * (full_correction - channel_data)

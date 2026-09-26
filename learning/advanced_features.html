@@ -283,6 +283,35 @@ result = (warped_rgb.astype(np.float32) * mask3 +
   </div>
 </details>
 
+<details class="fn">
+  <summary><span class="arrow">▶</span>Case study: making the classic model look better <span class="file-tag">tryon/segmentation.py · classic_backend.py</span></summary>
+  <div class="body">
+    <p>Each change below was chosen by rendering all three sample people against both shirts and looking at the output, then re-rendering after the fix.</p>
+
+    <div class="section-label">1. A blocked DLL silently turned every garment into a grey rectangle</div>
+    <p><code>rembg</code> imports <code>pymatting → numba → llvmlite</code>, and <code>llvmlite.dll</code> is an unsigned 120&nbsp;MB binary. Windows Application Control refused to load it (<code>ctypes.CDLL</code> reported <code>WinError 4551: An Application Control policy has blocked this file</code>), so the code's <code>try/except</code> fallback kicked in and treated the whole photo as garment, dragging its studio background onto the person. Security policy isn't something to work around, so the dependency went instead: rembg's cutout is just a U²-Net ONNX file, and <code>onnxruntime</code> runs it directly.</p>
+    <pre>rgb = cv2.resize(rgb, (320, 320)) / rgb.max()
+rgb = (rgb - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]      # ImageNet stats
+pred = session.run(None, {input_name: rgb.transpose(2, 0, 1)[None]})[0][0, 0]
+alpha = (pred - pred.min()) / (pred.max() - pred.min())          # min-max to 0..1</pre>
+    <p>A <code>cv2.grabCut</code> fallback (border pixels seeded as background) means "no model available" now degrades to a decent cutout rather than an opaque rectangle. Raw network output is mushy, so <code>refine_alpha</code> stretches contrast, keeps the largest connected component, and fills pinholes (a white button can read as background).</p>
+
+    <div class="section-label">2. Squeezed garments: joints are not shoulders</div>
+    <p>Pose landmarks are the shoulder <em>joints</em>, well inside a clothed shoulder, and a garment's bounding box includes its sleeves. Mapping sleeve-tip to sleeve-tip onto joint-to-joint gave a narrow strip. <code>top_width_scale</code> widens the target about its midpoint; 1.0 / 1.35 / 1.5 were rendered side by side and 1.35 won (1.5 floats past the body). The hem is sized from the top width (<code>bottom_width_ratio</code>) because a tee's body is boxy, unlike the far narrower hip joints.</p>
+
+    <div class="section-label">3. Halo and grey wash</div>
+    <ul>
+      <li><b>Halo:</b> the RGB under a cutout's transparent edge is still the studio background. Feathering the mask leaked it in as a pale rim, worst on dark clothes. <code>extend_colors</code> keeps only the confident interior (<code>alpha &gt; 0.9</code>, eroded) and fills everything else with a normalised blur of it: <code>blur(rgb·core) / blur(core)</code>, i.e. the nearest real garment colour.</li>
+      <li><b>Grey wash:</b> lighting-match moved the mean of a black tee toward the bright shirt it was covering. Mean shifts are now capped (<code>±14</code> L, <code>±6</code> A/B) and contrast ratio limited to 0.85–1.15: real lighting differences pass through, a change of garment colour doesn't.</li>
+      <li><b>Soft outline:</b> blurring <code>warped_alpha * body_mask</code> also blurred the garment's own edge and grew its silhouette. Now only the body-silhouette clip is feathered; the garment edge gets a ~1px anti-alias.</li>
+    </ul>
+
+    <div class="section-label">4. A fix that broke the no-hanger case</div>
+    <p><code>strip_hanger</code> discarded the top 16% unconditionally, which chopped the V-neck off a jersey that had no hanger. It now probes the mask width just below the very top: a hook is a thin stalk (&lt;25% of the garment's width), a real neckline/shoulder line isn't. Verified three ways: both real jerseys were left pixel-for-pixel unchanged, and a synthetic hook stalk + bar glued onto a shirt was detected and removed.</p>
+    <div class="tip">Lesson repeated from the hanger case: a heuristic tuned on one photo needs a check on photos where it should <em>not</em> fire.</div>
+  </div>
+</details>
+
 </main>
 <footer><a href="io_cli.html">← Image I/O &amp; CLI</a> &nbsp;·&nbsp; <a href="index.html">Back to Hub</a></footer>
 

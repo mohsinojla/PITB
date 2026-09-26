@@ -20,6 +20,12 @@ VISIBILITY_THRESHOLD = 0.5
 TORSO_HEIGHT_TO_SHOULDER_WIDTH = 1.35
 
 
+def _widen(left: np.ndarray, right: np.ndarray, scale: float):
+    """Stretch the segment left-right about its midpoint by `scale`."""
+    mid, half = (left + right) / 2, (right - left) / 2
+    return mid - half * scale, mid + half * scale
+
+
 @dataclass
 class TorsoLandmarks:
     left_shoulder: np.ndarray
@@ -27,9 +33,22 @@ class TorsoLandmarks:
     left_hip: np.ndarray
     right_hip: np.ndarray
 
-    def as_quad(self, shoulder_lift=0.12, hip_drop=0.18):
+    def as_quad(self, shoulder_lift=0.12, hip_drop=0.18,
+                top_width_scale=1.0, bottom_width_ratio=None):
         """Torso quad expanded a bit above the shoulders (for the neckline/
-        collar) and below the hips (so shirts/dresses have hem room)."""
+        collar) and below the hips (so shirts/dresses have hem room).
+
+        top_width_scale widens the shoulder edge about its midpoint.
+        bottom_width_ratio, if given, sets the hem width as a fraction of the
+        (widened) top width instead of deriving it from the hip joints: a
+        garment's body is roughly boxy, so its hem should be about as wide
+        as its chest, whereas hip *joints* can be far narrower than the
+        clothed torso and squeeze the hem into a strip.
+        Pose "shoulders" are the shoulder *joints*, which sit well inside the
+        outline of a clothed shoulder; a garment photo's bounding box also
+        includes its sleeves. Mapping sleeve-to-sleeve onto joint-to-joint
+        squeezes the garment into a narrow strip, so callers widen the
+        target to where the fabric would actually reach."""
         ls, rs, lh, rh = self.left_shoulder, self.right_shoulder, self.left_hip, self.right_hip
         torso_h = np.linalg.norm(((lh + rh) / 2) - ((ls + rs) / 2))
         up = np.array([0, -1.0]) * torso_h * shoulder_lift
@@ -47,6 +66,13 @@ class TorsoLandmarks:
         top_right = img_right_top + up
         bottom_left = img_left_bottom + down
         bottom_right = img_right_bottom + down
+        top_left, top_right = _widen(top_left, top_right, top_width_scale)
+        if bottom_width_ratio is not None:
+            hem_dir = bottom_right - bottom_left
+            hem_dir = hem_dir / (np.linalg.norm(hem_dir) + 1e-6)
+            half = np.linalg.norm(top_right - top_left) * bottom_width_ratio / 2
+            mid = (bottom_left + bottom_right) / 2
+            bottom_left, bottom_right = mid - hem_dir * half, mid + hem_dir * half
         return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
 
 
