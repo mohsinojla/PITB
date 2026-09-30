@@ -42,6 +42,60 @@ def pil_to_bgr(img: Image.Image) -> np.ndarray:
     return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
 
+def aspect_crop_box(w, h, target_w, target_h):
+    """The center-crop box catvton/utils.py's resize_and_crop would use to
+    bring a (w, h) image to the (target_w, target_h) aspect ratio, without
+    actually resizing -- same integer math, just returning the box instead
+    of the resized pixels. Used to know exactly which region of the
+    *original, full-resolution* photo the model's low-res canvas covers."""
+    if w / h < target_w / target_h:
+        new_w = w
+        new_h = w * target_h // target_w
+    else:
+        new_h = h
+        new_w = h * target_w // target_h
+    x0 = (w - new_w) // 2
+    y0 = (h - new_h) // 2
+    return x0, y0, x0 + new_w, y0 + new_h
+
+
+def paste_result_at_full_resolution(person_img, result_img, mask_img, width, height, feather_px=6):
+    """CatVTONPipeline internally downsizes the *entire* photo to the model's
+    working resolution (e.g. 384x512) and that's what it hands back -- fine
+    for a 400x500 test photo, but a real phone photo (e.g. 3024x4032) would
+    come back heavily downsampled everywhere: face, hair, background, not
+    just the garment.
+
+    Only the masked garment region actually needs the model's output --
+    everything else can stay exactly as sharp as the original photo. This
+    crops the original photo to the same aspect ratio the model used
+    (mirroring its own resize_and_crop, but without downscaling), upscales
+    just the generated result to that crop's real resolution, and composites
+    using the mask (built at full resolution already, so its edge is far
+    more precise than anything recoverable after a round trip through
+    384x512) -- feathered a little so the seam isn't a hard edge.
+    """
+    orig_w, orig_h = person_img.size
+    box = aspect_crop_box(orig_w, orig_h, width, height)
+    person_crop = person_img.crop(box)
+    crop_w, crop_h = person_crop.size
+
+    mask_crop = mask_img.crop(box).resize((crop_w, crop_h), Image.LANCZOS)
+    mask_arr = np.asarray(mask_crop, dtype=np.float32) / 255.0
+    if feather_px > 0:
+        mask_arr = cv2.GaussianBlur(mask_arr, (0, 0), sigmaX=feather_px / 3)
+        mask_arr = np.clip(mask_arr, 0.0, 1.0)
+    mask3 = mask_arr[:, :, None]
+
+    result_upscaled = result_img.resize((crop_w, crop_h), Image.LANCZOS)
+
+    composited = (
+        np.asarray(result_upscaled, dtype=np.float32) * mask3
+        + np.asarray(person_crop, dtype=np.float32) * (1 - mask3)
+    ).astype(np.uint8)
+    return Image.fromarray(composited)
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="Try a garment on a photo of yourself using a GPU diffusion model (CatVTON)."
@@ -71,6 +125,9 @@ def parse_args():
                          "a solid black image). fp32 uses ~2x the memory of either. Default: bf16.")
     p.add_argument("--device", default="cuda", help="'cuda' (default) or 'cpu' -- CPU works but is very slow "
                                                       "(likely tens of minutes per image) for a diffusion model.")
+    p.add_argument("--keep-raw-model-output", action="store_true",
+                    help="Also save the model's raw, low-resolution (e.g. 384x512) output alongside the "
+                         "full-resolution composited result, for comparison/debugging.")
     return p.parse_args()
 
 
@@ -154,8 +211,16 @@ def main():
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    results[0].save(output_path)
-    print(f"Saved result to {output_path.resolve()} ({elapsed:.1f}s)")
+
+    final = paste_result_at_full_resolution(person_img, results[0], mask_img, width, height)
+    final.save(output_path)
+
+    if args.keep_raw_model_output:
+        raw_path = output_path.with_stem(output_path.stem + "_raw_model_output")
+        results[0].save(raw_path)
+        print(f"Saved raw ({width}x{height}) model output to {raw_path.resolve()}")
+
+    print(f"Saved result to {output_path.resolve()} at {final.size[0]}x{final.size[1]} ({elapsed:.1f}s)")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@
 **Organization:** Punjab Information Technology Board (PITB)
 **Project:** Virtual Try-On — CLI tools for trying garments on a photo before buying
 **Repository:** [virtual-tryon/](virtual-tryon/) (classic CV) and [gputryon/](gputryon/) (GPU diffusion model)
-**Reporting period:** August 28, 2026 – September 9, 2026
+**Reporting period:** August 28, 2026 – October 1, 2026
 
 ## Summary
 
@@ -98,6 +98,20 @@ approach itself: a test garment with printed text came out with the
 fabric/drape looking convincing but the text illegible — diffusion models
 are generally poor at rendering legible text, not a bug specific to this
 setup.
+
+**Oct 1, 2026 — quality follow-up.** CatVTON's pipeline internally
+downsizes the *whole* photo to its 384x512 working resolution and hands
+that back — invisible on a small test photo, but a real phone photo (e.g.
+3024x4032) would come back with the face, hair, and background all
+softened to 384x512, not just the garment. Since only the masked garment
+region actually needs the model's output, `run.py` now crops the
+*original* photo to the model's aspect ratio (without downscaling),
+upscales just the generated garment region to that crop's real resolution,
+and composites the two using the (already full-resolution) mask —
+everything outside the mask stays exactly as sharp as the original photo.
+Verified end-to-end on a real sample photo: output resolution now matches
+the source crop (375x500) instead of being forced down to the model's
+384x512 canvas, with a clean blend at the mask boundary.
 
 ## How the classic tool (virtual-tryon/) works
 

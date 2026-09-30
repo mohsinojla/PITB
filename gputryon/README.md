@@ -93,6 +93,24 @@ offline.
 - `--device {cuda,cpu}`: `cpu` works but is very slow (likely tens of
   minutes per image) -- only useful if you don't have a working CUDA setup
   and want to see the pipeline run at all.
+- `--keep-raw-model-output`: also saves the model's raw, low-resolution
+  (e.g. 384x384) output next to the real result, for comparison/debugging.
+
+## Result quality: full-resolution compositing
+
+CatVTON's pipeline internally downsizes the *whole* photo to its working
+resolution (384x512 by default) and hands that back -- fine for a small
+test photo, but a real phone photo (e.g. 3024x4032) would come back with
+the face, hair, and background all softened to 384x512, not just the
+garment. Since only the masked garment region actually needs the model's
+output, `run.py` crops the *original* photo to the model's aspect ratio
+(without downscaling), upscales just the generated garment region to that
+crop's real resolution, and composites the two using the mask -- which was
+already built at full resolution, so its edge is far crisper than anything
+recoverable after a round trip through 384x512. Everything outside the
+mask (face, hair, background) stays exactly as sharp as the original
+photo. Pass `--keep-raw-model-output` to also save the model's untouched
+384x512 output for comparison.
 
 ## How it works
 
